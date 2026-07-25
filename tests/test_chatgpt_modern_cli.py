@@ -14,12 +14,13 @@ from os_agent.core.storage import StateDatabase  # noqa: E402
 
 
 class ChatGPTModernCliTests(unittest.TestCase):
-    def test_chatgpt_is_enabled_with_provider_memory(self):
+    def test_chatgpt_is_fully_automatic_api_provider_with_memory(self):
         config = load_config(ROOT / "config.json")
         chatgpt = config.provider("chatgpt")
         self.assertTrue(chatgpt.enabled)
+        self.assertEqual(chatgpt.kind, "openai_responses_api")
         self.assertTrue(chatgpt.get("inject_local_memory", False))
-        self.assertEqual(chatgpt.expected_email, "ebru112263gundes@gmail.com")
+        self.assertEqual(chatgpt.preferred_browser, "none")
 
     def test_memory_entries_keep_global_and_provider_scopes(self):
         with tempfile.TemporaryDirectory() as tmp:

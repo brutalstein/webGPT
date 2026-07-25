@@ -226,7 +226,7 @@ class TerminalApplication:
             if name == "gemini":
                 label = "Gemini · arka plan Chrome"
             elif name == "chatgpt":
-                label = "ChatGPT · görünür kullanıcı köprüsü"
+                label = "ChatGPT · OpenAI API · tam otomatik"
             else:
                 label = self._provider_label(name)
             choices.append(MenuChoice(label, name))
@@ -276,7 +276,7 @@ class TerminalApplication:
         for index, item in enumerate(rows, start=1):
             state = item.get("provider_state", {})
             model = str(state.get("model", "—")) if isinstance(state, dict) else "—"
-            remote = "✓" if isinstance(state, dict) and state.get("remote_url") else "—"
+            remote = "✓" if isinstance(state, dict) and (state.get("remote_url") or state.get("conversation_id")) else "—"
             table.add_row(
                 str(index),
                 self._provider_label(str(item.get("provider", ""))),
@@ -343,11 +343,8 @@ class TerminalApplication:
             try:
                 provider_name = self.orchestrator.provider_name
                 label = self._provider_label(provider_name)
-                if provider_name == "chatgpt":
+                with self.console.status(f"[cyan]{label} düşünüyor...[/cyan]", spinner="dots"):
                     response = self.orchestrator.send(prompt)
-                else:
-                    with self.console.status(f"[cyan]{label} düşünüyor...[/cyan]", spinner="dots"):
-                        response = self.orchestrator.send(prompt)
                 self.console.print(
                     Panel(
                         Markdown(response.text),
@@ -364,7 +361,7 @@ class TerminalApplication:
     def _render_session_header(self, record: dict[str, Any]) -> None:
         state = record.get("provider_state", {})
         model = str(state.get("model", "Hesap varsayılanı")) if isinstance(state, dict) else "—"
-        remote = "bağlı" if isinstance(state, dict) and state.get("remote_url") else "yeni"
+        remote = "bağlı" if isinstance(state, dict) and (state.get("remote_url") or state.get("conversation_id")) else "yeni"
         provider = self._provider_label(str(record.get("provider", "")))
         memory = "açık" if self._memory_injection_enabled(str(record.get("provider", ""))) else "kapalı"
         text = Text()
@@ -471,7 +468,7 @@ class TerminalApplication:
                 "Kurulum ve bakım",
                 [
                     MenuChoice("Google hesabı ve Gemini kurulumu", "setup_gemini"),
-                    MenuChoice("ChatGPT hesabı kurulumu", "setup_chatgpt"),
+                    MenuChoice("OpenAI API bağlantısı", "setup_chatgpt"),
                     MenuChoice("Gemini sistem tanısı", "doctor"),
                     MenuChoice("Gemini oturumunu silmeden yumuşak onarım", "repair"),
                     MenuChoice("Şimdi veritabanı yedeği al", "backup"),
@@ -513,7 +510,7 @@ class TerminalApplication:
         providers.add_column("OS belleği")
         for name in self.registry.names():
             settings = self.config.provider(name)
-            mode = "arka plan Chrome" if name == "gemini" else "görünür kullanıcı köprüsü"
+            mode = "arka plan Chrome" if name == "gemini" else "Responses API · terminal"
             providers.add_row(
                 self._provider_label(name),
                 settings.expected_email,
@@ -553,7 +550,7 @@ class TerminalApplication:
             )
         )
         if "kurul" in message.casefold() or "oturum" in message.casefold():
-            self.console.print("[dim]Ana menü → Kurulum ve bakım bölümünden ilgili hesabı kurabilirsin.[/dim]")
+            self.console.print("[dim]Ana menü → Kurulum ve bakım bölümünden ilgili bağlantıyı kurabilirsin.[/dim]")
 
     @staticmethod
     def _provider_label(provider: str) -> str:

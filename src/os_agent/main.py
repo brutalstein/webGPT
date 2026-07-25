@@ -13,7 +13,7 @@ from .core.provider_registry import ProviderRegistry
 from .core.session_store import SessionStore
 from .core.storage import StateDatabase
 from .errors import OSErrorBase
-from .providers.chatgpt_manual import ChatGPTManualWebProvider
+from .providers.chatgpt_api import OpenAIResponsesProvider
 from .providers.gemini_web import GeminiWebProvider
 from .ui.app import TerminalApplication
 
@@ -27,14 +27,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repair", action="store_true", help="Gemini profilini oturumu silmeden onarır")
     parser.add_argument("--backup", action="store_true", help="Durum veritabanını hemen yedekler")
     parser.add_argument("--visible", action="store_true", help="Gemini Chrome'u görünür hata ayıklama modunda açar")
+    parser.add_argument("--setup-openai", action="store_true", help="OpenAI API anahtarını güvenli kasaya kaydeder")
     return parser.parse_args()
 
 
 def build_registry(config: AppConfig) -> ProviderRegistry:
     registry = ProviderRegistry(config)
     registry.register("gemini_chrome_cdp", lambda app, settings: GeminiWebProvider(app, settings))
-    # Provider mimarisi korunur; ChatGPT config içinde etkinleştirilene kadar CLI'da görünmez.
-    registry.register("chatgpt_manual_web", lambda app, settings: ChatGPTManualWebProvider(app, settings))
+    registry.register("openai_responses_api", lambda app, settings: OpenAIResponsesProvider(app, settings))
     return registry
 
 
@@ -74,6 +74,9 @@ def run_direct_action(
     console: Console,
 ) -> int | None:
     provider = registry.get("gemini")
+    if args.setup_openai:
+        registry.get("chatgpt").setup()
+        return 0
     if args.setup:
         provider.setup()
         return 0

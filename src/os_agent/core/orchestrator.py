@@ -81,7 +81,10 @@ class Orchestrator:
         if self._bound_sessions.get(self.provider_name) != session_id:
             record = self._current_record()
             state = record.get("provider_state", {})
-            self.provider.resume_session(session_id, state if isinstance(state, dict) else {})
+            resume_state = dict(state) if isinstance(state, dict) else {}
+            # Uzak provider durumu kaybolursa yerel SQLite geçmişiyle konuşma yeniden kurulabilir.
+            resume_state["_local_turns"] = list(record.get("turns", []))
+            self.provider.resume_session(session_id, resume_state)
             self._bound_sessions[self.provider_name] = session_id
             self.sessions.touch_opened(session_id)
             self._persist_provider_state()

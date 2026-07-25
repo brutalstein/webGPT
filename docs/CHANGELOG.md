@@ -1,13 +1,12 @@
 # Değişiklik Günlüğü
 
-## 0.4.0 — Modern CLI ve kurumsal kayıt katmanı
+## 0.5.0
 
-- Kök dizindeki çok sayıdaki `.bat` dosyası kaldırıldı; tek giriş `os.bat` oldu.
-- Renkli ve ok tuşlarıyla kullanılan interaktif ana menü eklendi.
-- Konuşma seçme, arama, son konuşmaya devam etme ve yeni konuşma akışları menüye taşındı.
-- Sohbet içi komutlar `/menu`, `/new` ve `/exit` ile sınırlandı.
-- JSON session/memory yapısı SQLite tabanlı ortak çalışma alanına yükseltildi.
-- WAL, transaction, foreign key, quick-check, olay günlüğü ve otomatik yedekleme eklendi.
-- Eski JSON kayıtları için otomatik ve tekrar çalıştırılabilir göç eklendi.
-- Ayar ve context snapshot'ları session kaydına bağlandı.
-- Gemini varsayılan olarak arka planda çalışmaya devam ediyor.
+- ChatGPT manuel Chrome/pano köprüsü kaldırıldı.
+- Resmi OpenAI Responses + Conversations API provider'ı eklendi.
+- ChatGPT artık yalnızca terminalden ve tamamen otomatik çalışır.
+- API anahtarı Windows DPAPI kasasına taşındı.
+- Conversation ID, response ID, request ID ve usage metadatası SQLite'a bağlandı.
+- Retry/backoff ve hata sınıflandırması eklendi.
+- Uzak conversation kaybında yerel geçmiş replay altyapısı eklendi.
+- `--setup-openai` komutu eklendi.

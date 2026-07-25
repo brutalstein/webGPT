@@ -28,7 +28,6 @@ def run(command: list[str], *, env: dict[str, str] | None = None, check: bool = 
 def dependencies_ready() -> bool:
     try:
         import playwright  # noqa: F401
-        import pyperclip  # noqa: F401
         import rich  # noqa: F401
     except ImportError:
         return False
@@ -41,7 +40,7 @@ def install_dependencies() -> None:
     run([sys.executable, "-m", "pip", "install", "-r", str(REQUIREMENTS)])
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     HASH_FILE.write_text(file_hash(REQUIREMENTS), encoding="utf-8")
-    print("[KURULUM] Bağımlılıklar hazır. Kurulu Google Chrome kullanılacak.")
+    print("[KURULUM] Bağımlılıklar hazır. Gemini için kurulu Google Chrome kullanılacak.")
 
 
 def main() -> int:

@@ -38,15 +38,25 @@
       "cdp_port_timeout_seconds": 20
     },
     "chatgpt": {
-      "kind": "chatgpt_manual_web",
+      "kind": "openai_responses_api",
       "enabled": true,
       "expected_email": "ebru112263gundes@gmail.com",
-      "preferred_browser": "chrome",
-      "preferred_model": "Hesap varsayılanı",
+      "preferred_browser": "none",
+      "preferred_model": "gpt-5.2",
       "inject_local_memory": true,
-      "start_url": "https://chatgpt.com/",
-      "page_timeout_seconds": 60,
-      "login_timeout_seconds": 600
+      "api_key_env": "OPENAI_API_KEY",
+      "api_base_url": "https://api.openai.com/v1",
+      "request_timeout_seconds": 180,
+      "max_retries": 4,
+      "max_output_tokens": 4096,
+      "reasoning_effort": "medium",
+      "store_remote_conversation": true,
+      "history_replay_turns": 20,
+      "developer_instructions": "Türkçe ve doğrudan cevap ver. OS tarafından sağlanan kalıcı kullanıcı bağlamını dikkate al.",
+      "model_fallbacks": [
+        "gpt-5.1",
+        "gpt-5-mini"
+      ]
     }
   },
   "local_tools": {

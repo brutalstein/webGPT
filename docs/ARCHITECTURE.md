@@ -5,10 +5,16 @@ os.bat
   └─ bootstrap.py
        └─ Modern TerminalApplication
             ├─ Conversation Picker
+            ├─ Memory Manager
             ├─ Maintenance Menu
             ├─ Orchestrator
-            │    └─ GeminiWebProvider
-            │         └─ Headless Chrome + CDP
+            │    ├─ GeminiWebProvider
+            │    │    └─ Headless Chrome + CDP
+            │    └─ OpenAIResponsesProvider
+            │         ├─ Windows DPAPI Secret Store
+            │         ├─ OpenAI HTTP Client
+            │         ├─ Conversations API
+            │         └─ Responses API
             └─ StateDatabase
                  ├─ sessions
                  ├─ messages
@@ -17,13 +23,29 @@ os.bat
                  └─ metadata
 ```
 
-## Tasarım ilkeleri
+## Provider sınırları
 
-- Kök dizinde tek Windows giriş dosyası bulunur: `os.bat`.
-- Gemini normal çalışmada headless Chrome ve IPv4 CDP ile arka planda çalışır.
-- Google girişi otomasyon dışında, bakım menüsündeki normal Chrome kurulumu sırasında yapılır.
-- Session ile Gemini uzak konuşma URL'si bire bir eşlenir.
-- Konuşma seçildiğinde hem yerel mesaj kaydı hem uzak Gemini konuşması yeniden açılır.
-- Kalıcı durum SQLite WAL, foreign key, transaction, quick-check ve düzenli backup ile korunur.
-- Eski JSON kayıtları idempotent biçimde otomatik göç ettirilir.
-- ChatGPT adapter kodu provider katmanında korunur fakat mevcut ürün yüzeyinde devre dışıdır.
+### Gemini
+
+- Hesap girişi normal Chrome'da otomasyon dışında yapılır.
+- Normal kullanım headless Chrome + CDP'dir.
+- Uzak Gemini konuşma URL'si yerel session ile eşlenir.
+
+### ChatGPT / OpenAI
+
+- ChatGPT web arayüzü otomatikleştirilmez ve kazınmaz.
+- Resmi Responses ve Conversations API kullanılır.
+- API anahtarı DPAPI ile şifrelenir veya `OPENAI_API_KEY` üzerinden alınır.
+- Conversation ID yerel session'a bağlanır.
+- Uzak state kaybolursa son 20 yerel turn yeni conversation'a replay edilebilir.
+
+## Dayanıklılık
+
+- SQLite WAL ve foreign key
+- Atomik transaction'lar
+- Quick-check
+- Günlük yedek
+- Provider state snapshot
+- Request ID ve token usage metadata
+- Retry/backoff: 408, 409, 429, 5xx
+- API key hiçbir log, config, payload metadata veya veritabanına yazılmaz
