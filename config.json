@@ -60,8 +60,100 @@
     }
   },
   "local_tools": {
-    "enabled": false,
+    "enabled": true,
+    "provider_allowlist": [
+      "gemini"
+    ],
     "require_confirmation": true,
-    "allowed_commands": []
+    "default_to_process_cwd": true,
+    "workspace_state_file": "workspace.json",
+    "workspace_preview_entries": 80,
+    "max_agent_rounds": 8,
+    "max_calls_per_round": 4,
+    "protocol_correction_retries": 1,
+    "max_tool_result_chars": 24000,
+    "max_file_bytes": 1048576,
+    "command_timeout_seconds": 120,
+    "command_output_chars": 30000,
+    "backup_writes": true,
+    "protected_path_parts": [
+      ".git"
+    ],
+    "ignored_directories": [
+      ".git",
+      ".venv",
+      "venv",
+      "__pycache__",
+      ".pytest_cache",
+      ".mypy_cache",
+      ".ruff_cache",
+      "node_modules",
+      "dist",
+      "build"
+    ],
+    "allowed_tools": [
+      "workspace_info",
+      "list_directory",
+      "read_file",
+      "search_text",
+      "write_file",
+      "append_file",
+      "replace_text",
+      "create_directory",
+      "run_command",
+      "git_status"
+    ],
+    "allowed_executables": [
+      "git",
+      "git.exe",
+      "python",
+      "python.exe",
+      "python3",
+      "py",
+      "py.exe",
+      "pytest",
+      "pytest.exe",
+      "pip",
+      "pip.exe",
+      "pip3",
+      "node",
+      "node.exe",
+      "npm",
+      "npm.cmd",
+      "npx",
+      "npx.cmd",
+      "cmake",
+      "cmake.exe",
+      "ctest",
+      "ctest.exe",
+      "ninja",
+      "ninja.exe",
+      "ruff",
+      "ruff.exe",
+      "mypy",
+      "mypy.exe"
+    ],
+    "blocked_command_patterns": [
+      "\\bgit\\s+reset\\s+--hard\\b",
+      "\\bgit\\s+clean\\s+-[^\\s]*f",
+      "\\bgit\\s+push\\b.*(?:--force|-f)\\b",
+      "\\brm\\s+-rf\\b",
+      "\\bdel\\b.*(?:/s|/q)",
+      "\\brmdir\\b.*(?:/s|/q)",
+      "\\bformat\\b",
+      "\\bdiskpart\\b",
+      "\\bshutdown\\b",
+      "\\bRemove-Item\\b.*-Recurse"
+    ],
+    "sensitive_file_globs": [
+      "*.env",
+      ".env*",
+      "*credentials*",
+      "*secret*",
+      "*.pem",
+      "*.key",
+      "*id_rsa*",
+      "*id_ed25519*"
+    ]
   }
 }

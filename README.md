@@ -122,3 +122,27 @@ $env:OPENAI_MODEL="gpt-5-mini"
 ```
 
 `--visible` yalnızca Gemini Chrome hata ayıklaması içindir. ChatGPT API provider'ı hiçbir durumda tarayıcı açmaz.
+
+## Gemini yerel çalışma alanı araçları
+
+Gemini'yi bir proje klasörüne bağlamak için:
+
+```powershell
+.\os.bat --select-workspace
+```
+
+veya:
+
+```powershell
+.\os.bat --workspace "C:\Projeler\Uygulama"
+```
+
+Kayıtlı alanı ve kullanılabilir araçları görmek için:
+
+```powershell
+.\os.bat --workspace-info
+```
+
+Gemini seçili klasörü gerçek zamanlı olarak listeleyebilir, metin dosyalarını okuyabilir ve arayabilir. Kullanıcı onayıyla dosya oluşturabilir, içerik ekleyebilir, doğrulanmış metin değişiklikleri yapabilir, klasör oluşturabilir ve allowlist içindeki terminal programlarını çalıştırabilir.
+
+Yazma işlemleri atomik yapılır ve mevcut dosya önce `%LOCALAPPDATA%\OS\tool-backups` altında yedeklenir. Bütün araç çağrıları `%LOCALAPPDATA%\OS\logs\tool-audit.jsonl` dosyasına kaydedilir. Ayrıntılar `docs/TOOLS.md` içindedir.

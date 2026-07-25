@@ -20,3 +20,27 @@ class ClipboardBridgeError(ProviderError):
 
 class StorageError(OSErrorBase):
     pass
+
+
+class ToolError(OSErrorBase):
+    """Yerel araç katmanının kontrollü temel hatası."""
+
+
+class ToolValidationError(ToolError):
+    pass
+
+
+class ToolPolicyError(ToolError):
+    pass
+
+
+class ToolProtocolError(ToolError):
+    pass
+
+
+class ToolLoopError(ToolError):
+    pass
+
+
+class WorkspaceError(ToolError):
+    pass

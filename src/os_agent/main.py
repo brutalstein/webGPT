@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 
@@ -15,7 +16,9 @@ from .core.storage import StateDatabase
 from .errors import OSErrorBase
 from .providers.chatgpt_api import OpenAIResponsesProvider
 from .providers.gemini_web import GeminiWebProvider
+from .tools import LocalToolRuntime
 from .ui.app import TerminalApplication
+from .ui.workspace_picker import choose_workspace
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -28,12 +31,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--backup", action="store_true", help="Durum veritabanını hemen yedekler")
     parser.add_argument("--visible", action="store_true", help="Gemini Chrome'u görünür hata ayıklama modunda açar")
     parser.add_argument("--setup-openai", action="store_true", help="OpenAI API anahtarını güvenli kasaya kaydeder")
+    parser.add_argument("--workspace", metavar="KLASÖR", help="Bu çalıştırma için yerel çalışma alanını seçer ve kaydeder")
+    parser.add_argument("--select-workspace", action="store_true", help="Grafik klasör seçiciyle çalışma alanını belirler")
+    parser.add_argument("--workspace-info", action="store_true", help="Kayıtlı çalışma alanı ve araç durumunu gösterir")
     return parser.parse_args()
 
 
-def build_registry(config: AppConfig) -> ProviderRegistry:
+def build_registry(config: AppConfig, tool_runtime: LocalToolRuntime) -> ProviderRegistry:
     registry = ProviderRegistry(config)
-    registry.register("gemini_chrome_cdp", lambda app, settings: GeminiWebProvider(app, settings))
+    registry.register(
+        "gemini_chrome_cdp",
+        lambda app, settings: GeminiWebProvider(app, settings, tool_runtime=tool_runtime),
+    )
     registry.register("openai_responses_api", lambda app, settings: OpenAIResponsesProvider(app, settings))
     return registry
 
@@ -98,6 +107,28 @@ def run_direct_action(
     return None
 
 
+def configure_workspace(
+    args: argparse.Namespace,
+    runtime: LocalToolRuntime,
+    console: Console,
+) -> int | None:
+    if args.workspace:
+        selected = runtime.workspace.select(args.workspace, source="cli_argument")
+        console.print(f"[green]Çalışma alanı seçildi:[/green] {selected}")
+    if args.select_workspace:
+        selected = choose_workspace(runtime.workspace.root or Path.cwd())
+        if selected is None:
+            console.print("[yellow]Çalışma alanı seçimi iptal edildi.[/yellow]")
+            return 1
+        resolved = runtime.workspace.select(selected, source="folder_picker")
+        console.print(f"[green]Çalışma alanı seçildi:[/green] {resolved}")
+        return 0
+    if args.workspace_info:
+        console.print_json(json.dumps(runtime.status(), ensure_ascii=False))
+        return 0
+    return None
+
+
 def main() -> int:
     args = parse_args()
     if args.visible:
@@ -113,8 +144,13 @@ def main() -> int:
 
     try:
         config = load_config(ROOT / "config.json")
+        tool_runtime = LocalToolRuntime(config)
+        workspace_result = configure_workspace(args, tool_runtime, console)
+        if workspace_result is not None:
+            return workspace_result
+
         database, sessions, memory = prepare_storage(config)
-        registry = build_registry(config)
+        registry = build_registry(config, tool_runtime)
 
         direct_result = run_direct_action(args, config, registry, database, console)
         if direct_result is not None:

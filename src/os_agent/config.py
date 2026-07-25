@@ -99,6 +99,7 @@ class AppConfig:
             "memory_context_max_chars": self.memory_context_max_chars,
             "provider": provider.snapshot(),
             "storage": dict(self.storage),
+            "local_tools": dict(self.local_tools),
         }
 
 

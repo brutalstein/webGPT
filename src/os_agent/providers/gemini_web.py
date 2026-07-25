@@ -9,6 +9,8 @@ from ..config import AppConfig, ProviderSettings
 from ..core.provider import Provider
 from ..errors import ProviderError
 from ..models import ProviderResponse
+from ..tools import LocalToolRuntime
+from ..tools.approval import TerminalApprovalHandler
 from .gemini_chrome.browser import GeminiBrowserController
 from .gemini_chrome.client import GeminiClient
 from .gemini_chrome.config import GeminiChromeSettings
@@ -18,15 +20,23 @@ from .gemini_chrome.utils import save_screenshot
 
 
 class GeminiWebProvider(Provider):
-    """Normal Chrome hesabını koruyan, doğrudan Chrome+CDP tabanlı Gemini provider."""
+    """Normal Chrome hesabını koruyan, Chrome+CDP ve yerel araç tabanlı Gemini provider."""
 
     name = "gemini"
     mode = "chrome_cdp_web"
 
-    def __init__(self, app_config: AppConfig, settings: ProviderSettings):
+    def __init__(
+        self,
+        app_config: AppConfig,
+        settings: ProviderSettings,
+        *,
+        tool_runtime: LocalToolRuntime | None = None,
+    ):
         self.app_config = app_config
         self.settings = settings
         self.chrome_settings = GeminiChromeSettings.from_settings(app_config, settings)
+        self.tool_runtime = tool_runtime or LocalToolRuntime(app_config)
+        self.tool_runtime.set_approval_handler(TerminalApprovalHandler())
         self._playwright_manager = None
         self._playwright = None
         self.browser: GeminiBrowserController | None = None
@@ -90,12 +100,15 @@ class GeminiWebProvider(Provider):
 
             self.client = client
             self._started = True
+            workspace = self.tool_runtime.workspace.describe().get("root")
             print(
                 f"[GEMINI] Hazır — hesap profili: {self.chrome_settings.expected_email}, "
                 f"mod: {self._actual_mode}, görünür: {'evet' if self._headed else 'hayır'}, "
                 f"model: {client.current_model_text()}"
             )
             print("[GEMINI] Script kişisel talimatları değiştirmez; hesaptaki mevcut talimatlar geçerlidir.")
+            if self.tool_runtime.provider_enabled(self.name):
+                print(f"[GEMINI] Yerel araç katmanı açık. Çalışma alanı: {workspace or 'seçilmedi'}")
         except Exception as exc:
             page = None
             if self.browser is not None:
@@ -166,9 +179,11 @@ class GeminiWebProvider(Provider):
             "remote_provider": self.name,
             "model": self.client.current_model_text() if self.client is not None else "Bilinmiyor",
             "browser_mode": self._actual_mode,
+            "local_tools": self.tool_runtime.enabled,
+            "workspace": self.tool_runtime.workspace.describe(),
         }
 
-    def send(self, prompt: str, session_id: str) -> ProviderResponse:
+    def _send_raw(self, prompt: str, session_id: str) -> ProviderResponse:
         self.start()
         assert self.client is not None
         try:
@@ -189,9 +204,13 @@ class GeminiWebProvider(Provider):
             },
         )
 
+    def send(self, prompt: str, session_id: str) -> ProviderResponse:
+        return self.tool_runtime.run(self.name, self._send_raw, prompt, session_id)
+
     def status(self) -> dict[str, str]:
         model = self.client.current_model_text() if self.client is not None else "Bilinmiyor"
         remote_url = str(self.session_state().get("remote_url", "")) if self._started else ""
+        workspace = self.tool_runtime.workspace.describe().get("root")
         return {
             "provider": self.name,
             "mode": self._actual_mode,
@@ -205,6 +224,8 @@ class GeminiWebProvider(Provider):
             "login_method": "normal Chrome / otomasyonsuz",
             "unsafe_no_sandbox": "hayır",
             "prompt_passthrough": "evet" if not self.app_config.inject_local_memory else "hayır",
+            "local_tools": "açık" if self.tool_runtime.provider_enabled(self.name) else "kapalı",
+            "workspace": str(workspace or "seçilmedi"),
             "started": "evet" if self._started else "hayır",
         }
 

@@ -1,68 +1,113 @@
 from __future__ import annotations
 
-import shlex
-import subprocess
-from dataclasses import dataclass
-from pathlib import Path
+import time
+from collections.abc import Callable
+from typing import Any
 
-from ..errors import OSErrorBase
+from ..errors import ToolError
+from .audit import ToolAuditLog
+from .models import ApprovalDecision, ApprovalRequest, ToolCall, ToolResult
+from .policy import ToolPolicy
+from .registry import ToolContext, ToolRegistry
+from .workspace import WorkspaceManager
+
+ApprovalHandler = Callable[[ApprovalRequest], ApprovalDecision]
+ActivityHandler = Callable[[str, dict[str, Any]], None]
 
 
-@dataclass(slots=True)
-class CommandResult:
-    command: str
-    return_code: int
-    stdout: str
-    stderr: str
-
-
-class LocalCommandExecutor:
-    """
-    Yerel komut katmanı için güvenli başlangıç iskeleti.
-
-    Varsayılan olarak kapalıdır. Açıldığında yalnızca allowlist içindeki komutları
-    çalıştırır ve ayara göre kullanıcı onayı ister. Modelle otomatik bağlanmamıştır.
-    """
-
+class ToolExecutor:
     def __init__(
         self,
-        *,
-        enabled: bool,
-        allowed_commands: list[str],
-        require_confirmation: bool = True,
+        registry: ToolRegistry,
+        workspace: WorkspaceManager,
+        policy: ToolPolicy,
+        audit: ToolAuditLog,
+        settings: dict[str, Any],
     ):
-        self.enabled = enabled
-        self.allowed_commands = tuple(item.casefold().strip() for item in allowed_commands if item.strip())
-        self.require_confirmation = require_confirmation
+        self.registry = registry
+        self.workspace = workspace
+        self.policy = policy
+        self.audit = audit
+        self.settings = settings
+        self.approval_handler: ApprovalHandler | None = None
+        self.activity_handler: ActivityHandler | None = None
+        self._session_approvals: set[str] = set()
+        self._approval_session_id: str | None = None
+        self._executed: dict[str, ToolResult] = {}
 
-    def run(self, command: str, cwd: Path | None = None) -> CommandResult:
-        if not self.enabled:
-            raise OSErrorBase("Yerel komut çalıştırma config.json içinde kapalı.")
+    def reset_run(self) -> None:
+        self._executed.clear()
 
-        parts = shlex.split(command, posix=False)
-        if not parts:
-            raise OSErrorBase("Boş komut çalıştırılamaz.")
-        executable = parts[0].casefold()
-        if executable not in self.allowed_commands:
-            raise OSErrorBase(f"Komut allowlist içinde değil: {parts[0]}")
+    def execute_many(self, calls: list[ToolCall], session_id: str) -> list[ToolResult]:
+        return [self.execute(call, session_id) for call in calls]
 
-        if self.require_confirmation:
-            answer = input(f"Yerelde çalıştırılsın mı? {command} [e/H]: ").strip().casefold()
-            if answer not in {"e", "evet", "y", "yes"}:
-                raise OSErrorBase("Komut kullanıcı tarafından iptal edildi.")
+    def execute(self, call: ToolCall, session_id: str) -> ToolResult:
+        if self._approval_session_id != session_id:
+            self._approval_session_id = session_id
+            self._session_approvals.clear()
+        if call.call_id in self._executed:
+            return self._executed[call.call_id]
 
-        completed = subprocess.run(
-            parts,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
+        started = time.monotonic()
+        tool = self.registry.get(call.name)
+        definition = tool.definition
+        self.policy.require_tool(definition)
+        self.registry.validate_arguments(call.name, call.arguments)
+
+        if self.activity_handler:
+            self.activity_handler("requested", {"tool": call.name, "arguments": call.arguments})
+
+        try:
+            if self.policy.requires_confirmation(definition, call.arguments) and call.name not in self._session_approvals:
+                if self.approval_handler is None:
+                    raise ToolError(f"{definition.title} için kullanıcı onayı gerekiyor.")
+                decision = self.approval_handler(
+                    ApprovalRequest(call=call, definition=definition, summary=tool.summarize(call.arguments))
+                )
+                if not decision.approved:
+                    raise ToolError("Kullanıcı araç çağrısını reddetti.")
+                if decision.remember_for_session:
+                    self._session_approvals.add(call.name)
+
+            context = ToolContext(workspace=self.workspace, settings=self.settings, session_id=session_id)
+            payload = tool.execute(context, call.arguments)
+            duration = int((time.monotonic() - started) * 1000)
+            content_limit = max(1000, int(self.settings.get("max_tool_result_chars", 24000)))
+            content = payload.content
+            if len(content) > content_limit:
+                content = content[:content_limit] + f"\n... <{len(payload.content) - content_limit} karakter kırpıldı>"
+            result = ToolResult(
+                call_id=call.call_id,
+                name=call.name,
+                ok=True,
+                content=content,
+                structured=payload.structured,
+                duration_ms=duration,
+            )
+        except Exception as exc:
+            duration = int((time.monotonic() - started) * 1000)
+            result = ToolResult(
+                call_id=call.call_id,
+                name=call.name,
+                ok=False,
+                content=str(exc),
+                error=f"{type(exc).__name__}: {exc}",
+                duration_ms=duration,
+            )
+
+        self._executed[call.call_id] = result
+        self.audit.write(
+            session_id=session_id,
+            call_id=call.call_id,
+            tool=call.name,
+            arguments=call.arguments,
+            ok=result.ok,
+            duration_ms=result.duration_ms,
+            error=result.error,
         )
-        return CommandResult(
-            command=command,
-            return_code=completed.returncode,
-            stdout=completed.stdout,
-            stderr=completed.stderr,
-        )
+        if self.activity_handler:
+            self.activity_handler(
+                "completed",
+                {"tool": call.name, "ok": result.ok, "duration_ms": result.duration_ms},
+            )
+        return result
