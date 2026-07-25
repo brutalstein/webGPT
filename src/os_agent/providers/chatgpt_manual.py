@@ -11,6 +11,7 @@ from ..config import AppConfig, ProviderSettings
 from ..errors import ClipboardBridgeError, ProviderError
 from ..models import ProviderResponse
 from ..core.provider import Provider
+from .chatgpt_setup import ManualChatGPTSetup
 
 
 class ChatGPTManualWebProvider(Provider):
@@ -33,6 +34,7 @@ class ChatGPTManualWebProvider(Provider):
         self.browser: PersistentBrowser | None = None
         self._started = False
         self._session_id: str | None = None
+        self.manual_setup = ManualChatGPTSetup(app_config, settings)
 
     def _ensure_runtime(self) -> None:
         if self._playwright is not None:
@@ -42,21 +44,24 @@ class ChatGPTManualWebProvider(Provider):
         self.browser = PersistentBrowser(self.app_config, self.settings, self._playwright)
 
     def setup(self) -> None:
-        self._ensure_runtime()
-        assert self.browser is not None
-        page = self.browser.launch(headless=False, url=str(self.settings.get("start_url", "https://chatgpt.com/")))
-        page.bring_to_front()
-        print("\n[CHATGPT HESAP KURULUMU]")
-        print(f"Beklenen hesap: {self.settings.expected_email}")
-        print("Açılan tarayıcıda bu hesabın etkin olduğunu elle doğrula.")
-        print("Ayarlar > Kişiselleştirme bölümünde Özel Talimatlar ve Bellek seçeneklerini kontrol et.")
-        print(f"Model seçimi: {self.settings.preferred_model}")
-        input("Kurulum tamamlanınca bu terminalde Enter'a bas: ")
-        self._started = True
+        self.close()
+        self.manual_setup.run()
 
     def start(self) -> None:
         if self._started and self.browser is not None and self.browser.page is not None:
             return
+
+        profile = self.manual_setup.profile_dir
+        cookie_candidates = (
+            profile / "Default" / "Network" / "Cookies",
+            profile / "Default" / "Cookies",
+        )
+        if not self.manual_setup.marker.exists() and not any(path.exists() for path in cookie_candidates):
+            raise ProviderError(
+                "ChatGPT hesabı henüz kurulmamış. Ana menüden Kurulum ve bakım > "
+                "ChatGPT hesabı kurulumu seçeneğini çalıştır."
+            )
+
         self._ensure_runtime()
         assert self.browser is not None
         page = self.browser.launch(headless=False, url=str(self.settings.get("start_url", "https://chatgpt.com/")))
@@ -64,6 +69,8 @@ class ChatGPTManualWebProvider(Provider):
         self._started = True
         print(f"[CHATGPT] Görünür web köprüsü açık. Beklenen hesap: {self.settings.expected_email}")
         print("[CHATGPT] Hesap, bellek ve model seçimi web arayüzünde kullanıcı tarafından yönetilir.")
+        if bool(self.settings.get("inject_local_memory", self.app_config.inject_local_memory)):
+            print("[CHATGPT] OS kalıcı bağlamı gönderilecek prompta otomatik eklenir.")
 
     @staticmethod
     def _is_chatgpt_url(url: object) -> bool:
@@ -116,6 +123,7 @@ class ChatGPTManualWebProvider(Provider):
             "remote_url": remote_url,
             "remote_provider": self.name,
             "mode": self.mode,
+            "model": self.settings.preferred_model,
         }
 
     def send(self, prompt: str, session_id: str) -> ProviderResponse:
@@ -164,6 +172,10 @@ class ChatGPTManualWebProvider(Provider):
             "remote_conversation": remote_url or "henüz oluşmadı",
             "started": "evet" if self._started else "hayır",
             "account_verification": "kullanıcı kontrollü",
+            "browser_profile": str(self.manual_setup.profile_dir),
+            "local_context": "açık" if bool(
+                self.settings.get("inject_local_memory", self.app_config.inject_local_memory)
+            ) else "kapalı",
         }
 
     def close(self) -> None:

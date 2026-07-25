@@ -68,6 +68,26 @@ class MemoryStore:
             result[str(row["key"])] = str(row["value"])
         return result
 
+    def list_entries(self) -> list[dict[str, str]]:
+        with self.database.read() as connection:
+            rows = connection.execute(
+                """
+                SELECT scope, provider, key, value, updated_at
+                FROM context_entries
+                ORDER BY CASE scope WHEN 'global' THEN 0 ELSE 1 END, provider, key
+                """
+            ).fetchall()
+        return [
+            {
+                "scope": str(row["scope"]),
+                "provider": str(row["provider"]),
+                "key": str(row["key"]),
+                "value": str(row["value"]),
+                "updated_at": str(row["updated_at"]),
+            }
+            for row in rows
+        ]
+
     def render_context(self, provider: str, max_chars: int) -> str:
         entries = self.combined(provider)
         if not entries:

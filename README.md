@@ -1,53 +1,68 @@
 # OS
 
-OS, terminalden Gemini ile konuşmak için tek giriş noktalı kişisel AI çalışma alanıdır. Google Chrome özel profilde ve normal kullanımda tamamen arka planda çalışır.
+OS, Gemini ve ChatGPT konuşmalarını tek modern terminal arayüzünde yöneten kalıcı kişisel AI çalışma alanıdır.
 
 ## Başlatma
 
-Windows'ta yalnızca şu dosyayı çalıştır:
+Windows'ta yalnızca:
 
 ```text
 os.bat
 ```
 
-İlk açılışta **Kurulum ve bakım → Google hesabı ve Gemini kurulumu** seçeneğine gir. Açılan normal Chrome'da Google hesabına giriş yap, Gemini'nin çalıştığını doğrula ve Chrome'u tamamen kapat. Sonraki kullanımlarda `os.bat` Chrome penceresi göstermeden çalışır.
+çalıştırılır. Ana menüden Gemini veya ChatGPT seçebilir, yeni konuşma açabilir ya da kayıtlı bir konuşmaya devam edebilirsin.
+
+## Hesap kurulumu
+
+### Gemini
+
+**Kurulum ve bakım → Google hesabı ve Gemini kurulumu** seçeneğini kullan. Kurulum normal Chrome'da ve otomasyon olmadan yapılır. Sonraki kullanımlarda Gemini arka planda çalışır.
+
+### ChatGPT
+
+**Kurulum ve bakım → ChatGPT hesabı kurulumu** seçeneğini kullan. Ayrı ve kalıcı Chrome profilinde `ebru112263gundes@gmail.com` hesabına giriş yap; Özel Talimatlar, Bellek ve model ayarlarını doğrula.
+
+ChatGPT provider'ı web çıktısını otomatik olarak kazımaz. OS promptu panoya kopyalar ve doğru ChatGPT konuşmasını açar; mesajı gönderip tamamlanan yanıtı panoya kopyalama adımı kullanıcı kontrollüdür. Böylece hesap oturumu, konuşma URL'si, yerel mesaj kaydı ve OS belleği kalıcı tutulur.
 
 ## Modern CLI
 
 Ana menüden:
 
-- Son konuşmaya devam edebilirsin.
-- Kayıtlı konuşmaları seçebilir veya içeriklerinde arama yapabilirsin.
-- Yeni bir Gemini konuşması başlatabilirsin.
-- Kurulum, tanı, onarım ve yedekleme işlemlerine ulaşabilirsin.
+- Son Gemini veya ChatGPT konuşmasına devam edebilirsin.
+- Bütün provider konuşmalarını tek listede arayabilirsin.
+- Yeni konuşma açarken provider seçebilirsin.
+- Kalıcı OS belleğini global veya provider'a özel yönetebilirsin.
+- Hesap kurulumu, tanı, onarım ve yedekleme işlemlerine ulaşabilirsin.
 
-Sohbet ekranında yalnızca üç komut vardır:
+Sohbet ekranındaki komutlar:
 
 ```text
 /menu   Ana menüye döner.
-/new    Yeni konuşma açar.
+/new    Aynı provider ile yeni konuşma açar.
 /exit   OS'yi kapatır.
 ```
 
-## Kalıcı kayıt
+## Kalıcı bellek ve kayıt
 
-OS çalışma alanı SQLite üzerinde tutulur:
+SQLite çalışma alanı:
 
 ```text
 %LOCALAPPDATA%\OS\state\os-state.db
 ```
 
-Her konuşmada şu bilgiler transaction ile kaydedilir:
+Kaydedilenler:
 
-- Kullanıcı ve Gemini mesajları
-- Konuşma başlığı ve zaman bilgileri
-- Gemini uzak konuşma URL'si
-- Model ve tarayıcı çalışma modu
-- O konuşmada geçerli olan ayarların anlık görüntüsü
-- Yerel context'in anlık görüntüsü
+- Gemini ve ChatGPT kullanıcı/asistan mesajları
+- Konuşma başlığı, provider ve zaman bilgileri
+- Uzak konuşma URL'si
+- Model ve çalışma modu
+- Ayar ve context snapshot'ları
+- Global ve provider'a özel kalıcı bellek
 - Provider olayları ve hata kayıtları
 
-Eski `sessions.json` ve `memory.json` dosyaları ilk çalıştırmada otomatik olarak SQLite'a taşınır. Günlük otomatik yedekler burada tutulur:
+ChatGPT için OS belleği varsayılan olarak prompta eklenir. Gemini için hesap içindeki kişisel talimatları değiştirmemek amacıyla bu özellik varsayılan olarak kapalıdır. Ayarlar `config.json` içindeki provider bazlı `inject_local_memory` alanıyla yönetilir.
+
+Günlük yedekler:
 
 ```text
 %LOCALAPPDATA%\OS\backups
@@ -55,13 +70,13 @@ Eski `sessions.json` ve `memory.json` dosyaları ilk çalıştırmada otomatik o
 
 ## Görünür hata ayıklama
 
-Normal kullanımda gerekmez. Chrome'u görünür açarak test etmek için:
+Gemini'yi görünür açmak için:
 
 ```powershell
 .\os.bat --visible
 ```
 
-Doğrudan bakım işlemleri de desteklenir:
+Doğrudan bakım işlemleri:
 
 ```powershell
 .\os.bat --setup
@@ -69,5 +84,3 @@ Doğrudan bakım işlemleri de desteklenir:
 .\os.bat --repair
 .\os.bat --backup
 ```
-
-Mimari ve teknik ayrıntılar `docs/` klasöründedir.

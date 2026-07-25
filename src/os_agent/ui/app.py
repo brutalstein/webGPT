@@ -107,7 +107,7 @@ class ArrowMenu:
 
 
 class TerminalApplication:
-    """Tek giriş noktalı, konuşma seçilebilir modern OS terminali."""
+    """Gemini ve ChatGPT konuşmalarını ortak kalıcı çalışma alanında yönetir."""
 
     def __init__(
         self,
@@ -142,7 +142,7 @@ class TerminalApplication:
                 break
             try:
                 if action == "continue":
-                    latest = self.orchestrator.latest_session()
+                    latest = self._latest_session()
                     if latest is None:
                         self._open_new_session()
                     else:
@@ -153,6 +153,8 @@ class TerminalApplication:
                         self._open_session(session_id)
                 elif action == "new":
                     self._open_new_session()
+                elif action == "memory":
+                    self._memory_menu()
                 elif action == "maintenance":
                     self._maintenance_menu()
             except OSErrorBase as exc:
@@ -174,7 +176,7 @@ class TerminalApplication:
 
     def _render_header(self) -> None:
         health = self.database.quick_check()
-        subtitle = "Gemini · Arka plan Chrome · Kalıcı SQLite çalışma alanı"
+        subtitle = "Gemini · ChatGPT · Kalıcı SQLite çalışma alanı"
         status = "[green]sağlıklı[/green]" if health.casefold() == "ok" else f"[red]{health}[/red]"
         self.console.print()
         self.console.print(
@@ -189,29 +191,53 @@ class TerminalApplication:
             )
         )
 
+    def _latest_session(self) -> dict[str, Any] | None:
+        rows = self.sessions.list_recent(limit=1, include_turns=False)
+        return rows[0] if rows else None
+
     def _main_menu(self) -> str | None:
-        latest = self.orchestrator.latest_session()
+        latest = self._latest_session()
         choices: list[MenuChoice] = []
         if latest is not None:
-            title = self._shorten(str(latest.get("title", "Yeni oturum")), 54)
-            choices.append(MenuChoice(f"Son konuşmaya devam et  ·  {title}", "continue"))
+            title = self._shorten(str(latest.get("title", "Yeni oturum")), 45)
+            provider = self._provider_label(str(latest.get("provider", "")))
+            choices.append(MenuChoice(f"Son konuşmaya devam et  ·  {provider} · {title}", "continue"))
         else:
             choices.append(MenuChoice("İlk konuşmayı başlat", "new"))
         choices.extend(
             [
                 MenuChoice("Konuşma seç veya ara", "choose"),
                 MenuChoice("Yeni konuşma", "new"),
+                MenuChoice("Kalıcı bellek ve bağlam", "memory"),
                 MenuChoice("Kurulum ve bakım", "maintenance"),
                 MenuChoice("Çıkış", "exit"),
             ]
         )
         return self.menu.ask("Ne yapmak istiyorsun?", choices)
 
+    def _choose_provider(self, message: str = "Provider seç") -> str | None:
+        names = self.registry.names()
+        if not names:
+            return None
+        if len(names) == 1:
+            return names[0]
+        choices = []
+        for name in names:
+            if name == "gemini":
+                label = "Gemini · arka plan Chrome"
+            elif name == "chatgpt":
+                label = "ChatGPT · görünür kullanıcı köprüsü"
+            else:
+                label = self._provider_label(name)
+            choices.append(MenuChoice(label, name))
+        choices.append(MenuChoice("Geri", "__back__"))
+        selected = self.menu.ask(message, choices)
+        return None if selected in {None, "__back__"} else str(selected)
+
     def _choose_session(self, search: str | None = None) -> str | None:
         limit = max(5, int(self.config.cli.get("recent_session_limit", 30)))
         rows = self.sessions.list_recent(
             limit=limit,
-            provider=self.config.default_provider,
             search=search,
             include_turns=False,
         )
@@ -241,7 +267,8 @@ class TerminalApplication:
     def _render_session_table(self, rows: list[dict[str, Any]]) -> None:
         table = Table(title="Kayıtlı konuşmalar", border_style="cyan", header_style="bold cyan")
         table.add_column("#", justify="right", style="dim", width=3)
-        table.add_column("Başlık", min_width=28)
+        table.add_column("Provider", width=9)
+        table.add_column("Başlık", min_width=24)
         table.add_column("Mesaj", justify="right", width=7)
         table.add_column("Model", width=14)
         table.add_column("Güncellendi", width=17)
@@ -252,7 +279,8 @@ class TerminalApplication:
             remote = "✓" if isinstance(state, dict) and state.get("remote_url") else "—"
             table.add_row(
                 str(index),
-                self._shorten(str(item.get("title", "Yeni oturum")), 52),
+                self._provider_label(str(item.get("provider", ""))),
+                self._shorten(str(item.get("title", "Yeni oturum")), 44),
                 str(item.get("message_count", 0)),
                 self._shorten(model, 14),
                 self._format_time(str(item.get("updated_at", ""))),
@@ -261,12 +289,23 @@ class TerminalApplication:
         self.console.print(table)
 
     def _open_session(self, session_id: str) -> None:
-        with self.console.status("[cyan]Gemini konuşması arka planda hazırlanıyor...[/cyan]", spinner="dots"):
+        record = self.sessions.get(session_id)
+        if record is None:
+            raise ProviderError(f"Oturum bulunamadı: {session_id}")
+        provider = str(record.get("provider", ""))
+        label = self._provider_label(provider)
+        message = f"{label} konuşması hazırlanıyor..."
+        with self.console.status(f"[cyan]{message}[/cyan]", spinner="dots"):
             self.orchestrator.resume_session(session_id)
         self._chat_loop()
 
     def _open_new_session(self) -> None:
-        with self.console.status("[cyan]Yeni Gemini konuşması arka planda hazırlanıyor...[/cyan]", spinner="dots"):
+        provider = self._choose_provider("Yeni konuşma için provider seç")
+        if provider is None:
+            return
+        self.orchestrator.switch_provider(provider)
+        label = self._provider_label(provider)
+        with self.console.status(f"[cyan]Yeni {label} konuşması hazırlanıyor...[/cyan]", spinner="dots"):
             self.orchestrator.new_session()
         self._chat_loop()
 
@@ -294,19 +333,25 @@ class TerminalApplication:
                 self._exit_requested = True
                 return
             if command == "/new":
-                with self.console.status("[cyan]Yeni konuşma hazırlanıyor...[/cyan]", spinner="dots"):
+                label = self._provider_label(self.orchestrator.provider_name)
+                with self.console.status(f"[cyan]Yeni {label} konuşması hazırlanıyor...[/cyan]", spinner="dots"):
                     self.orchestrator.new_session()
                 record = self.orchestrator.current_session()
                 self._render_session_header(record)
                 continue
 
             try:
-                with self.console.status("[cyan]Gemini düşünüyor...[/cyan]", spinner="dots"):
+                provider_name = self.orchestrator.provider_name
+                label = self._provider_label(provider_name)
+                if provider_name == "chatgpt":
                     response = self.orchestrator.send(prompt)
+                else:
+                    with self.console.status(f"[cyan]{label} düşünüyor...[/cyan]", spinner="dots"):
+                        response = self.orchestrator.send(prompt)
                 self.console.print(
                     Panel(
                         Markdown(response.text),
-                        title="[bold cyan]Gemini[/bold cyan]",
+                        title=f"[bold cyan]{self._provider_label(response.provider)}[/bold cyan]",
                         border_style="cyan",
                         padding=(1, 2),
                     )
@@ -320,12 +365,19 @@ class TerminalApplication:
         state = record.get("provider_state", {})
         model = str(state.get("model", "Hesap varsayılanı")) if isinstance(state, dict) else "—"
         remote = "bağlı" if isinstance(state, dict) and state.get("remote_url") else "yeni"
+        provider = self._provider_label(str(record.get("provider", "")))
+        memory = "açık" if self._memory_injection_enabled(str(record.get("provider", ""))) else "kapalı"
         text = Text()
         text.append(str(record.get("title", "Yeni oturum")), style="bold")
-        text.append(f"\n{record['session_id']}  ·  {model}  ·  uzak konuşma: {remote}", style="dim")
+        text.append(
+            f"\n{record['session_id']}  ·  {provider}  ·  {model}  ·  uzak: {remote}  ·  OS belleği: {memory}",
+            style="dim",
+        )
         self.console.print(Panel(text, border_style="bright_black", padding=(0, 2)))
 
     def _render_recent_history(self, session_id: str) -> None:
+        record = self.sessions.get(session_id)
+        provider = self._provider_label(str(record.get("provider", ""))) if record else "Asistan"
         turns = self.sessions.recent_turns(session_id, limit=4)
         if not turns:
             return
@@ -333,19 +385,95 @@ class TerminalApplication:
         table.add_column(width=10, style="dim")
         table.add_column()
         for turn in turns:
-            role = "Sen" if turn["role"] == "user" else "Gemini"
+            role = "Sen" if turn["role"] == "user" else provider
             text = self._shorten(" ".join(str(turn["text"]).split()), 180)
             table.add_row(role, text)
         self.console.print(Panel(table, title="Son mesajlar", border_style="bright_black"))
+
+    def _memory_menu(self) -> None:
+        while True:
+            choice = self.menu.ask(
+                "Kalıcı bellek ve bağlam",
+                [
+                    MenuChoice("Kayıtlı belleği göster", "show"),
+                    MenuChoice("Tüm provider'lar için bilgi ekle", "add_global"),
+                    MenuChoice("Provider'a özel bilgi ekle", "add_provider"),
+                    MenuChoice("Bellekten bilgi sil", "delete"),
+                    MenuChoice("Ana menüye dön", "back"),
+                ],
+            )
+            if choice in {None, "back"}:
+                return
+            if choice == "show":
+                self._render_memory_entries()
+            elif choice == "add_global":
+                self._add_memory(None)
+            elif choice == "add_provider":
+                provider = self._choose_provider("Belleğin ait olacağı provider")
+                if provider:
+                    self._add_memory(provider)
+            elif choice == "delete":
+                self._delete_memory()
+
+    def _add_memory(self, provider: str | None) -> None:
+        scope = "genel" if provider is None else self._provider_label(provider)
+        key = Prompt.ask(f"[cyan]{scope} bellek anahtarı[/cyan]", console=self.console).strip()
+        if not key:
+            return
+        value = Prompt.ask("[cyan]Değer[/cyan]", console=self.console).strip()
+        if not value:
+            return
+        self.memory.set(key, value, provider=provider)
+        self.console.print(f"[green]Bellek kaydedildi:[/green] {scope} / {key}")
+
+    def _delete_memory(self) -> None:
+        entries = self.memory.list_entries()
+        if not entries:
+            self.console.print("[yellow]Silinecek bellek kaydı yok.[/yellow]")
+            return
+        choices = []
+        for index, item in enumerate(entries):
+            scope = "Genel" if item["scope"] == "global" else self._provider_label(item["provider"])
+            label = f"{scope} · {item['key']} = {self._shorten(item['value'], 52)}"
+            choices.append(MenuChoice(label, str(index)))
+        choices.append(MenuChoice("Geri", "__back__"))
+        selected = self.menu.ask("Silinecek kaydı seç", choices)
+        if selected in {None, "__back__"}:
+            return
+        item = entries[int(selected)]
+        provider = item["provider"] if item["scope"] == "provider" else None
+        if self.memory.delete(item["key"], provider=provider):
+            self.console.print("[green]Bellek kaydı silindi.[/green]")
+
+    def _render_memory_entries(self) -> None:
+        entries = self.memory.list_entries()
+        if not entries:
+            self.console.print("[yellow]Kalıcı bellek henüz boş.[/yellow]")
+            return
+        table = Table(title="Kalıcı OS belleği", border_style="cyan", header_style="bold cyan")
+        table.add_column("Kapsam", width=12)
+        table.add_column("Anahtar", width=24)
+        table.add_column("Değer", min_width=32)
+        table.add_column("Güncellendi", width=17)
+        for item in entries:
+            scope = "Genel" if item["scope"] == "global" else self._provider_label(item["provider"])
+            table.add_row(
+                scope,
+                item["key"],
+                self._shorten(item["value"], 90),
+                self._format_time(item["updated_at"]),
+            )
+        self.console.print(table)
 
     def _maintenance_menu(self) -> None:
         while True:
             choice = self.menu.ask(
                 "Kurulum ve bakım",
                 [
-                    MenuChoice("Google hesabı ve Gemini kurulumu", "setup"),
+                    MenuChoice("Google hesabı ve Gemini kurulumu", "setup_gemini"),
+                    MenuChoice("ChatGPT hesabı kurulumu", "setup_chatgpt"),
                     MenuChoice("Gemini sistem tanısı", "doctor"),
-                    MenuChoice("Oturumu silmeden yumuşak onarım", "repair"),
+                    MenuChoice("Gemini oturumunu silmeden yumuşak onarım", "repair"),
                     MenuChoice("Şimdi veritabanı yedeği al", "backup"),
                     MenuChoice("Ayarlar ve depolama durumunu göster", "status"),
                     MenuChoice("Ana menüye dön", "back"),
@@ -355,14 +483,15 @@ class TerminalApplication:
                 return
             try:
                 self.orchestrator.suspend()
-                provider = self.registry.get("gemini")
-                if choice == "setup":
-                    provider.setup()
+                if choice == "setup_gemini":
+                    self.registry.get("gemini").setup()
+                elif choice == "setup_chatgpt":
+                    self.registry.get("chatgpt").setup()
                 elif choice == "doctor":
-                    report = provider.doctor.run()
+                    report = self.registry.get("gemini").doctor.run()
                     self.console.print(f"[green]Rapor oluşturuldu:[/green] {report}")
                 elif choice == "repair":
-                    provider.doctor.soft_repair()
+                    self.registry.get("gemini").doctor.soft_repair()
                     self.console.print("[green]Yumuşak onarım tamamlandı.[/green]")
                 elif choice == "backup":
                     path = self.database.backup_now(
@@ -376,25 +505,43 @@ class TerminalApplication:
                 self._show_error(str(exc))
 
     def _render_status(self) -> None:
-        provider = self.config.provider(self.config.default_provider)
-        table = Table(title="OS çalışma alanı", border_style="cyan", header_style="bold cyan")
-        table.add_column("Alan", style="dim")
-        table.add_column("Değer")
-        table.add_row("Provider", provider.name)
-        table.add_row("Hesap", provider.expected_email)
-        table.add_row("Tercih edilen model", provider.preferred_model)
-        table.add_row("Tarayıcı", "Google Chrome · arka plan")
-        table.add_row("Veritabanı", str(self.config.database_path))
-        table.add_row("Veritabanı kontrolü", self.database.quick_check())
-        table.add_row("Yedek klasörü", str(self.config.backups_dir))
-        table.add_row("Yerel context enjeksiyonu", "açık" if self.config.inject_local_memory else "kapalı")
-        self.console.print(table)
+        providers = Table(title="Provider durumları", border_style="cyan", header_style="bold cyan")
+        providers.add_column("Provider")
+        providers.add_column("Hesap")
+        providers.add_column("Model")
+        providers.add_column("Çalışma")
+        providers.add_column("OS belleği")
+        for name in self.registry.names():
+            settings = self.config.provider(name)
+            mode = "arka plan Chrome" if name == "gemini" else "görünür kullanıcı köprüsü"
+            providers.add_row(
+                self._provider_label(name),
+                settings.expected_email,
+                settings.preferred_model,
+                mode,
+                "açık" if self._memory_injection_enabled(name) else "kapalı",
+            )
+        self.console.print(providers)
+
+        storage = Table(title="OS çalışma alanı", border_style="cyan", header_style="bold cyan")
+        storage.add_column("Alan", style="dim")
+        storage.add_column("Değer")
+        storage.add_row("Veritabanı", str(self.config.database_path))
+        storage.add_row("Veritabanı kontrolü", self.database.quick_check())
+        storage.add_row("Yedek klasörü", str(self.config.backups_dir))
+        storage.add_row("Bellek kaydı", str(len(self.memory.list_entries())))
+        self.console.print(storage)
+
+    def _memory_injection_enabled(self, provider: str) -> bool:
+        settings = self.config.provider(provider)
+        return bool(settings.get("inject_local_memory", self.config.inject_local_memory))
 
     def _session_choice_label(self, item: dict[str, Any]) -> str:
-        title = self._shorten(str(item.get("title", "Yeni oturum")), 55)
+        title = self._shorten(str(item.get("title", "Yeni oturum")), 46)
         count = int(item.get("message_count", 0))
         updated = self._format_time(str(item.get("updated_at", "")))
-        return f"{title}  ·  {count} mesaj  ·  {updated}"
+        provider = self._provider_label(str(item.get("provider", "")))
+        return f"{provider} · {title} · {count} mesaj · {updated}"
 
     def _show_error(self, message: str) -> None:
         self.console.print(
@@ -406,7 +553,16 @@ class TerminalApplication:
             )
         )
         if "kurul" in message.casefold() or "oturum" in message.casefold():
-            self.console.print("[dim]Ana menü → Kurulum ve bakım → Google hesabı ve Gemini kurulumu[/dim]")
+            self.console.print("[dim]Ana menü → Kurulum ve bakım bölümünden ilgili hesabı kurabilirsin.[/dim]")
+
+    @staticmethod
+    def _provider_label(provider: str) -> str:
+        key = provider.casefold().strip()
+        if key == "gemini":
+            return "Gemini"
+        if key == "chatgpt":
+            return "ChatGPT"
+        return provider or "Bilinmiyor"
 
     @staticmethod
     def _shorten(text: str, limit: int) -> str:

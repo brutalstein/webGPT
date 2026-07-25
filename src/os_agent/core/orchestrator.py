@@ -53,6 +53,10 @@ class Orchestrator:
     def _context_snapshot(self) -> dict[str, str]:
         return self.memory.combined(self.provider_name)
 
+    def _inject_local_memory_enabled(self) -> bool:
+        settings = self.config.provider(self.provider_name)
+        return bool(settings.get("inject_local_memory", self.config.inject_local_memory))
+
     def _snapshot_current(self) -> None:
         if not self.session_id:
             return
@@ -160,7 +164,8 @@ class Orchestrator:
         session_id = self._require_session_id()
 
         provider_prompt = user_prompt
-        if self.config.inject_local_memory:
+        inject_context = self._inject_local_memory_enabled()
+        if inject_context:
             context = self.memory.render_context(
                 self.provider_name,
                 self.config.memory_context_max_chars,
@@ -177,7 +182,7 @@ class Orchestrator:
             session_id,
             "user",
             user_prompt,
-            metadata={"provider": self.provider_name, "context_injected": self.config.inject_local_memory},
+            metadata={"provider": self.provider_name, "context_injected": inject_context},
         )
         try:
             response = self.provider.send(provider_prompt, session_id)

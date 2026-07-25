@@ -20,6 +20,7 @@
       "expected_email": "willieewonka224@gmail.com",
       "preferred_browser": "chrome",
       "preferred_model": "3.1 Pro",
+      "inject_local_memory": false,
       "headless_after_setup": true,
       "strict_account_check": false,
       "strict_model_check": false,
@@ -38,10 +39,11 @@
     },
     "chatgpt": {
       "kind": "chatgpt_manual_web",
-      "enabled": false,
+      "enabled": true,
       "expected_email": "ebru112263gundes@gmail.com",
       "preferred_browser": "chrome",
       "preferred_model": "Hesap varsayılanı",
+      "inject_local_memory": true,
       "start_url": "https://chatgpt.com/",
       "page_timeout_seconds": 60,
       "login_timeout_seconds": 600
