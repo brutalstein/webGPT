@@ -11,13 +11,13 @@
       "expected_email": "willieewonka224@gmail.com",
       "preferred_browser": "chrome",
       "preferred_model": "3.1 Pro",
-      "headless_after_setup": false,
+      "headless_after_setup": true,
       "strict_account_check": false,
       "strict_model_check": false,
       "reuse_previous_working_profile": true,
       "verify_personalization": false,
       "expected_instruction_count": 3,
-      "start_new_chat_on_launch": true,
+      "start_new_chat_on_launch": false,
       "response_timeout_seconds": 360,
       "stable_seconds": 5.0,
       "page_timeout_seconds": 60,
@@ -25,7 +25,8 @@
       "launch_mode": "cdp",
       "fallback_to_persistent": true,
       "cdp_start_retries": 3,
-      "cdp_port_timeout_seconds": 20
+      "cdp_port_timeout_seconds": 20,
+      "resume_latest_session_on_start": true
     },
     "chatgpt": {
       "kind": "chatgpt_manual_web",
@@ -35,7 +36,8 @@
       "preferred_model": "Hesap varsayılanı",
       "start_url": "https://chatgpt.com/",
       "page_timeout_seconds": 60,
-      "login_timeout_seconds": 600
+      "login_timeout_seconds": 600,
+      "resume_latest_session_on_start": true
     }
   },
   "local_tools": {

@@ -1,73 +1,77 @@
-# OS — Chrome/Gemini Provider
+# OS — Provider tabanlı kişisel AI terminali
 
-Bu sürüm Gemini hesabını **normal Google Chrome profilinde** tutar ve terminalden gönderilen promptları Gemini web arayüzüne aktarır.
+OS, terminal ile model sağlayıcıları arasında ortak bir provider katmanı kurar. Gemini provider'ı özel Google Chrome profilindeki oturumu kullanır; normal çalışmada Chrome penceresi göstermeden headless CDP modunda çalışır. ChatGPT provider'ı ise kullanıcı kontrollü web köprüsüdür ve ChatGPT çıktısını otomatik olarak kazımaz.
 
-## Neden iki aşamalı?
+## İlk Gemini kurulumu
 
-Google, yazılım otomasyonu altında çalışan giriş sayfalarını engelleyebilir. Bu nedenle:
+1. `doctor_gemini.bat` çalıştır.
+2. `setup_gemini.bat` çalıştır.
+3. Açılan normal Chrome'da `willieewonka224@gmail.com` hesabına giriş yap.
+4. Gemini mesaj kutusunu, kişisel talimatlarını ve istediğin modeli doğrula.
+5. Özel Chrome penceresini tamamen kapat.
+6. `start_gemini.bat` çalıştır.
 
-1. Google hesabına giriş **normal Chrome ile, Playwright/CDP olmadan** yapılır.
-2. Giriş tamamlandıktan sonra aynı özel profil Chrome+CDP ile kontrol edilir.
+`start_gemini.bat` artık arka plan modudur. Görünür hata ayıklama gerektiğinde `start_gemini_visible.bat` kullanılabilir.
 
-Bu tasarımda `--no-sandbox` kullanılmaz. Gemini kişisel talimatlarına, Kişisel Zeka ayarlarına veya hesap ayarlarına kod dokunmaz.
+## Kalıcı oturumlar
 
-## İlk kurulum
-
-1. ZIP'i normal bir klasöre çıkar. OneDrive dışındaki `C:\OS` gibi kısa bir yol tercih edilir.
-2. `doctor_gemini.bat` çalıştır.
-3. `setup_gemini.bat` çalıştır.
-4. Açılan normal Chrome'da `willieewonka224@gmail.com` hesabına giriş yap.
-5. Gemini mesaj kutusunu, kişisel talimatlarını ve istediğin modeli kontrol et.
-6. Bu özel Chrome penceresini tamamen kapat, terminale dönüp Enter'a bas.
-7. `start_gemini_visible.bat` çalıştır.
-
-Terminal açıldığında test promptu:
+Yerel session kayıtları şu dosyada tutulur:
 
 ```text
-Bana nasıl hitap etmen gerekiyor?
+%LOCALAPPDATA%\OS\state\sessions.json
 ```
 
-## Başlatma seçenekleri
+Her session aşağıdakileri saklar:
 
-- `start_gemini.bat`: önerilen görünür CDP modu.
+- Provider adı
+- Kullanıcı/asistan mesajları
+- Oturum başlığı
+- Gemini veya ChatGPT uzak konuşma URL'si
+- Kullanılan provider modu ve model bilgisi
+
+Başlangıçta provider'ın en son session'ı otomatik yüklenir. Komutlar:
+
+```text
+/sessions
+/session
+/resume OTURUM_ID
+/new
+/use gemini
+/use chatgpt
+```
+
+`/new`, hem yeni yerel session oluşturur hem de provider tarafında temiz konuşma açar. `/resume`, session hangi provider'a aitse ona geçer ve kayıtlı uzak konuşma URL'sini yeniden açar.
+
+## Gemini çalışma modları
+
+- `start_gemini.bat`: önerilen, arka plan CDP modu.
 - `start_gemini_visible.bat`: görünür CDP modu.
-- `start_gemini_background.bat`: oturum çalıştıktan sonra isteğe bağlı headless mod.
-- `start_gemini_playwright_fallback.bat`: CDP çalışmazsa sandbox açık Playwright persistent fallback.
+- `start_gemini_background.bat`: arka plan CDP modu için uyumluluk kısayolu.
+- `start_gemini_playwright_fallback.bat`: CDP başarısızsa persistent fallback.
 - `setup_gemini.bat`: otomasyonsuz normal Chrome hesap kurulumu/oturum yenileme.
+
+Projede `--no-sandbox` kullanılmaz. Gemini kişisel talimatlarına, Kişisel Zeka ayarlarına veya hesap ayarlarına kod dokunmaz. Promptun başına yerel bellek eklenmez (`inject_local_memory=false`).
+
+## ChatGPT provider
+
+ChatGPT provider ayrı kalıcı Chrome profilini ve uzak konuşma URL'sini session içinde korur. ChatGPT web çıktısının otomatik/programatik olarak çıkarılması uygulanmaz; provider görünür kullanıcı kontrollü pano köprüsü olarak kalır.
+
+İlk kurulum:
+
+```text
+setup_chatgpt.bat
+```
+
+Beklenen hesap:
+
+```text
+ebru112263gundes@gmail.com
+```
 
 ## Onarım araçları
 
-- `doctor_gemini.bat`: Chrome sürümü, profil, kilitler, loopback, politika, proxy ve antivirüs raporu.
+- `doctor_gemini.bat`: Chrome, profil, loopback ve politika raporu.
 - `repair_gemini_soft.bat`: çerezleri silmeden kilitleri ve önbellekleri temizler.
-- `stop_gemini_browser.bat`: yalnızca OS Gemini profiline ait Chrome süreçlerini kapatır.
-- `reset_gemini_profile.bat`: profili silmeden tarihli klasöre yedekler ve boş profil oluşturur.
-- `open_gemini_logs.bat`: tanı loglarını açar.
-
-## Kritik kural
-
-Otomasyon penceresinde Google giriş ekranı görünürse orada giriş yapmaya çalışma. Pencereyi kapatıp `setup_gemini.bat` çalıştır. Google'ın otomasyon altındaki giriş sayfasını engellemesi normal bir güvenlik davranışıdır.
-
-## Profil konumu
-
-Önceki çalışan profil varsa uyumluluk için şu dizin kullanılır:
-
-```text
-%LOCALAPPDATA%\GeminiTerminalAgent\chrome-profile
-```
-
-Yoksa:
-
-```text
-%LOCALAPPDATA%\OS\browser-profiles\gemini-chrome
-```
-
-## Talimatların korunması
-
-Gemini kişisel talimatları hesabın içindedir. Proje:
-
-- Ayarlar menüsünü otomatik açmaz.
-- Talimat anahtarlarını değiştirmez.
-- Promptun başına yerel bellek eklemez (`inject_local_memory=false`).
-- Yeni sohbet açarak hesap ayarlarının temiz bir sohbette uygulanmasını sağlar.
-
-Daha ayrıntılı hata matrisi için `TROUBLESHOOTING.md` dosyasına bak.
+- `stop_gemini_browser.bat`: yalnızca OS Gemini Chrome süreçlerini kapatır.
+- `reset_gemini_profile.bat`: profili yedekleyerek sıfırlar.
+- `open_gemini_logs.bat`: tanı kayıtlarını açar.

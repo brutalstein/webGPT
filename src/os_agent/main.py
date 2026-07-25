@@ -87,14 +87,33 @@ def handle_command(command, orchestrator: Orchestrator, registry: ProviderRegist
     if command.name == "new":
         print(f"[OTURUM] Yeni oturum: {orchestrator.new_session()}")
         return True
+    if command.name == "resume":
+        if not command.argument:
+            print("Kullanım: /resume OTURUM_ID")
+            return True
+        session_id = orchestrator.resume_session(command.argument)
+        print(f"[OTURUM] Devam ediliyor: {session_id} | provider: {orchestrator.provider_name}")
+        return True
+    if command.name == "session":
+        item = orchestrator.current_session()
+        state = item.get("provider_state", {})
+        remote_url = state.get("remote_url", "") if isinstance(state, dict) else ""
+        print(f"  id: {item['session_id']}")
+        print(f"  provider: {item['provider']}")
+        print(f"  title: {item.get('title', '')}")
+        print(f"  turn_count: {len(item.get('turns', []))}")
+        print(f"  remote_url: {remote_url or 'henüz oluşmadı'}")
+        return True
     if command.name == "sessions":
         rows = orchestrator.sessions.list_recent(10)
         if not rows:
             print("Kayıtlı oturum yok.")
         for item in rows:
+            state = item.get("provider_state", {})
+            remote = "uzak=evet" if isinstance(state, dict) and state.get("remote_url") else "uzak=hayır"
             print(
-                f"- {item['session_id']} | {item['provider']} | "
-                f"{len(item.get('turns', []))} mesaj | {item.get('updated_at', '')}"
+                f"- {item['session_id']} | {item['provider']} | {item.get('title', '')} | "
+                f"{len(item.get('turns', []))} mesaj | {remote} | {item.get('updated_at', '')}"
             )
         return True
     if command.name == "remember":

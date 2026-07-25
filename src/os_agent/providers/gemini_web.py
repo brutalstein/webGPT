@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
-from playwright.sync_api import Error as PlaywrightError, sync_playwright
+from playwright.sync_api import Error as PlaywrightError, TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 from ..config import AppConfig, ProviderSettings
 from ..core.provider import Provider
@@ -33,6 +34,7 @@ class GeminiWebProvider(Provider):
         self._started = False
         self._actual_mode = "kapalı"
         self._headed = True
+        self._session_id: str | None = None
 
     @property
     def doctor(self) -> GeminiDoctor:
@@ -58,7 +60,8 @@ class GeminiWebProvider(Provider):
                 "Google hesabına normal Chrome'da giriş yap; pencereyi tamamen kapat."
             )
 
-        self._headed = os.environ.get("OS_GEMINI_HEADED", "1") != "0"
+        default_headed = "0" if self.chrome_settings.headless else "1"
+        self._headed = os.environ.get("OS_GEMINI_HEADED", default_headed) != "0"
         forced_mode = os.environ.get("OS_GEMINI_MODE")
 
         self._playwright_manager = sync_playwright()
@@ -70,13 +73,12 @@ class GeminiWebProvider(Provider):
             self._actual_mode = session.mode
             client = GeminiClient(self.chrome_settings, session.page)
             client.open()
+            # Headless modda sayfa ilk saniyede hazır olmayabilir. `headed=True`
+            # yalnızca bekleme davranışını seçer; tarayıcı penceresi açmaz.
             client.wait_until_ready(
-                headed=self._headed,
-                timeout_seconds=self.chrome_settings.page_timeout_seconds if not self._headed else 600,
+                headed=True,
+                timeout_seconds=600 if self._headed else self.chrome_settings.page_timeout_seconds,
             )
-
-            if self.chrome_settings.start_new_chat:
-                client.start_new_chat()
 
             if not client.ensure_model_selected():
                 if self.chrome_settings.strict_model_check:
@@ -90,7 +92,8 @@ class GeminiWebProvider(Provider):
             self._started = True
             print(
                 f"[GEMINI] Hazır — hesap profili: {self.chrome_settings.expected_email}, "
-                f"mod: {self._actual_mode}, model: {client.current_model_text()}"
+                f"mod: {self._actual_mode}, görünür: {'evet' if self._headed else 'hayır'}, "
+                f"model: {client.current_model_text()}"
             )
             print("[GEMINI] Script kişisel talimatları değiştirmez; hesaptaki mevcut talimatlar geçerlidir.")
         except Exception as exc:
@@ -109,6 +112,62 @@ class GeminiWebProvider(Provider):
                 raise ProviderError(f"Chrome/Playwright hatası: {exc}.{detail}") from exc
             raise
 
+    @staticmethod
+    def _is_gemini_url(url: object) -> bool:
+        return isinstance(url, str) and url.startswith("https://gemini.google.com/app")
+
+    def resume_session(self, session_id: str, state: dict[str, Any]) -> None:
+        self.start()
+        assert self.client is not None
+        assert self.browser is not None
+        page = self.browser.require_page()
+        remote_url = state.get("remote_url")
+
+        if self._is_gemini_url(remote_url):
+            if page.url != remote_url:
+                try:
+                    page.goto(
+                        str(remote_url),
+                        wait_until="domcontentloaded",
+                        timeout=self.chrome_settings.page_timeout_seconds * 1_000,
+                    )
+                except PlaywrightTimeoutError:
+                    if not page.url.startswith("https://gemini.google.com/app"):
+                        raise ProviderError("Kayıtlı Gemini konuşması açılamadı.")
+                except PlaywrightError as exc:
+                    raise ProviderError(f"Kayıtlı Gemini konuşması açılamadı: {exc}") from exc
+            self.client.page = page
+            self.client.wait_until_ready(
+                headed=True,
+                timeout_seconds=self.chrome_settings.page_timeout_seconds,
+            )
+        else:
+            self.client.start_new_chat()
+
+        self._session_id = session_id
+
+    def new_session(self, session_id: str) -> None:
+        self.start()
+        assert self.client is not None
+        self.client.start_new_chat()
+        self._session_id = session_id
+
+    def session_state(self) -> dict[str, Any]:
+        remote_url = ""
+        if self.browser is not None:
+            try:
+                page = self.browser.require_page()
+                if self._is_gemini_url(page.url):
+                    remote_url = page.url
+            except ProviderError:
+                pass
+        return {
+            "remote_url": remote_url,
+            "remote_provider": self.name,
+            "model": self.client.current_model_text() if self.client is not None else "Bilinmiyor",
+            "browser_mode": self._actual_mode,
+        }
+
     def send(self, prompt: str, session_id: str) -> ProviderResponse:
         self.start()
         assert self.client is not None
@@ -118,6 +177,7 @@ class GeminiWebProvider(Provider):
             raise
         except PlaywrightError as exc:
             raise ProviderError(f"Gemini sekmesi yenilenmiş veya kapanmış olabilir: {exc}") from exc
+        state = self.session_state()
         return ProviderResponse(
             text=text,
             provider=self.name,
@@ -125,11 +185,13 @@ class GeminiWebProvider(Provider):
             metadata={
                 "mode": self._actual_mode,
                 "account": self.chrome_settings.expected_email,
+                "remote_url": state.get("remote_url", ""),
             },
         )
 
     def status(self) -> dict[str, str]:
         model = self.client.current_model_text() if self.client is not None else "Bilinmiyor"
+        remote_url = str(self.session_state().get("remote_url", "")) if self._started else ""
         return {
             "provider": self.name,
             "mode": self._actual_mode,
@@ -137,7 +199,9 @@ class GeminiWebProvider(Provider):
             "preferred_model": self.chrome_settings.preferred_model,
             "current_model": model,
             "browser": "Google Chrome",
+            "browser_visibility": "görünür" if self._headed else "arka plan",
             "browser_profile": str(self.chrome_settings.profile_dir),
+            "remote_conversation": remote_url or "henüz oluşmadı",
             "login_method": "normal Chrome / otomasyonsuz",
             "unsafe_no_sandbox": "hayır",
             "prompt_passthrough": "evet" if not self.app_config.inject_local_memory else "hayır",
@@ -161,3 +225,4 @@ class GeminiWebProvider(Provider):
         self._playwright_manager = None
         self._started = False
         self._actual_mode = "kapalı"
+        self._session_id = None
