@@ -54,7 +54,6 @@ class PersistentBrowser:
                 "--no-first-run",
                 "--no-default-browser-check",
                 "--disable-notifications",
-                *self._safe_extra_args(),
             ],
         )
 
@@ -103,28 +102,6 @@ class PersistentBrowser:
             Path(os.environ.get("LOCALAPPDATA", "")) / "Google/Chrome/Application/chrome.exe",
         ]
         return next((item for item in candidates if item.is_file()), None)
-
-
-    def _safe_extra_args(self) -> list[str]:
-        raw = self.settings.get("browser_args", [])
-        if not isinstance(raw, (list, tuple)):
-            return []
-        blocked = (
-            "--no-sandbox",
-            "--user-data-dir",
-            "--remote-debugging",
-            "--profile-directory",
-        )
-        result: list[str] = []
-        for item in raw:
-            value = str(item).strip()
-            if not value.startswith("--"):
-                continue
-            if any(value.casefold().startswith(prefix) for prefix in blocked):
-                continue
-            if value not in result:
-                result.append(value)
-        return result
 
     def _terminate_stale_processes(self) -> None:
         if os.name != "nt":

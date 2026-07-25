@@ -12,36 +12,17 @@ os.bat
 
 çalıştırılır. Ana menüden Gemini veya ChatGPT seçebilir, yeni konuşma açabilir ya da kayıtlı bir konuşmaya devam edebilirsin.
 
-## Provider çalışma biçimleri
-
-### Gemini
-
-Gemini ayrı Chrome profilinde arka planda otomatik çalışır:
-
-```text
-Terminal promptu → headless Chrome → Gemini yanıtı → terminal
-```
-
-### ChatGPT background companion
-
-ChatGPT ayrı ve kalıcı Chrome profilinde çalışır. Chrome boşta minimize edilir; terminalden prompt girildiğinde prompt panoya kopyalanır ve yalnızca ChatGPT penceresi öne getirilir. Mesajı gönderme ve tamamlanan yanıtı panoya kopyalama adımı kullanıcı kontrollüdür. Yanıt alındıktan sonra pencere yeniden minimize edilir.
-
-```text
-Terminal promptu → pano → ChatGPT penceresi → kullanıcı gönderimi/kopyalaması
-                 → SQLite kayıt → Chrome tekrar minimize
-```
-
-ChatGPT web çıktısı otomatik kazınmaz. OpenAI kullanım şartları veri veya Çıktının otomatik/programlı çıkarılmasını yasakladığı için bu provider uyumlu companion yaklaşımını kullanır.
-
 ## Hesap kurulumu
 
 ### Gemini
 
-**Kurulum ve bakım → Google hesabı ve Gemini kurulumu** seçeneğini kullan. Kurulum normal Chrome'da ve otomasyon olmadan yapılır.
+**Kurulum ve bakım → Google hesabı ve Gemini kurulumu** seçeneğini kullan. Kurulum normal Chrome'da ve otomasyon olmadan yapılır. Sonraki kullanımlarda Gemini arka planda çalışır.
 
 ### ChatGPT
 
-**Kurulum ve bakım → ChatGPT hesabı kurulumu** seçeneğini kullan. Ayrı profilde `ebru112263gundes@gmail.com` hesabına giriş yap; Özel Talimatlar, Bellek ve model ayarlarını doğrula.
+**Kurulum ve bakım → ChatGPT hesabı kurulumu** seçeneğini kullan. Ayrı ve kalıcı Chrome profilinde `ebru112263gundes@gmail.com` hesabına giriş yap; Özel Talimatlar, Bellek ve model ayarlarını doğrula.
+
+ChatGPT provider'ı web çıktısını otomatik olarak kazımaz. OS promptu panoya kopyalar ve doğru ChatGPT konuşmasını açar; mesajı gönderip tamamlanan yanıtı panoya kopyalama adımı kullanıcı kontrollüdür. Böylece hesap oturumu, konuşma URL'si, yerel mesaj kaydı ve OS belleği kalıcı tutulur.
 
 ## Modern CLI
 
@@ -79,7 +60,7 @@ Kaydedilenler:
 - Global ve provider'a özel kalıcı bellek
 - Provider olayları ve hata kayıtları
 
-ChatGPT için OS belleği varsayılan olarak prompta eklenir. Gemini için hesap içindeki kişisel talimatları değiştirmemek amacıyla bu özellik varsayılan olarak kapalıdır.
+ChatGPT için OS belleği varsayılan olarak prompta eklenir. Gemini için hesap içindeki kişisel talimatları değiştirmemek amacıyla bu özellik varsayılan olarak kapalıdır. Ayarlar `config.json` içindeki provider bazlı `inject_local_memory` alanıyla yönetilir.
 
 Günlük yedekler:
 
@@ -103,5 +84,3 @@ Doğrudan bakım işlemleri:
 .\os.bat --repair
 .\os.bat --backup
 ```
-
-ChatGPT companion ayrıntıları `docs/CHATGPT_COMPANION.md` dosyasındadır.
