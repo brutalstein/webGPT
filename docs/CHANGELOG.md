@@ -1,5 +1,16 @@
 # Değişiklik Günlüğü
 
+## 0.7.0
+
+- Yerelde çalışan React/Vite coding-agent çalışma alanı eklendi.
+- CLI ana menüsüne Web çalışma alanını aç seçeneği ve `--web` komutu eklendi.
+- FastAPI/WebSocket kontrol düzlemi, tek thread Playwright worker ve bounded event hub eklendi.
+- Gemini görünür yanıt snapshot'ları, thinking/responding/tools aşamaları ve iptal akışı eklendi.
+- Tool çağrıları, süreleri, sonuçları ve kullanıcı onayları web arayüzünde görünür hâle getirildi.
+- Workspace seçici, dosya ağacı, güvenli dosya önizlemesi, session listesi, bellek ve yedek yönetimi eklendi.
+- Loopback-only sunucu, tek kullanımlık auth bileti, HttpOnly cookie, Origin doğrulaması ve CSP eklendi.
+- Frontend bağımlılık ve kaynak hash'leriyle artımlı üretim eklendi.
+
 ## 0.5.0
 
 - ChatGPT manuel Chrome/pano köprüsü kaldırıldı.

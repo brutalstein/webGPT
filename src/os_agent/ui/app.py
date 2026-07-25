@@ -4,6 +4,7 @@ import os
 import sys
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from rich.console import Console, Group
@@ -21,6 +22,7 @@ from ..core.provider_registry import ProviderRegistry
 from ..core.session_store import SessionStore
 from ..core.storage import StateDatabase
 from ..errors import OSErrorBase, ProviderError
+from ..tools import LocalToolRuntime
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +118,8 @@ class TerminalApplication:
         database: StateDatabase,
         sessions: SessionStore,
         memory: MemoryStore,
+        tool_runtime: LocalToolRuntime,
+        root: Path,
         console: Console | None = None,
     ):
         self.config = config
@@ -123,6 +127,8 @@ class TerminalApplication:
         self.database = database
         self.sessions = sessions
         self.memory = memory
+        self.tool_runtime = tool_runtime
+        self.root = root
         self.console = console or Console(highlight=False)
         self.menu = ArrowMenu(self.console)
         self.orchestrator = Orchestrator(
@@ -153,6 +159,8 @@ class TerminalApplication:
                         self._open_session(session_id)
                 elif action == "new":
                     self._open_new_session()
+                elif action == "web":
+                    self._open_web_interface()
                 elif action == "memory":
                     self._memory_menu()
                 elif action == "maintenance":
@@ -176,7 +184,7 @@ class TerminalApplication:
 
     def _render_header(self) -> None:
         health = self.database.quick_check()
-        subtitle = "Gemini · ChatGPT · Kalıcı SQLite çalışma alanı"
+        subtitle = "Gemini · Web workspace · Kalıcı SQLite çalışma alanı"
         status = "[green]sağlıklı[/green]" if health.casefold() == "ok" else f"[red]{health}[/red]"
         self.console.print()
         self.console.print(
@@ -208,12 +216,30 @@ class TerminalApplication:
             [
                 MenuChoice("Konuşma seç veya ara", "choose"),
                 MenuChoice("Yeni konuşma", "new"),
+                MenuChoice("Web çalışma alanını aç", "web"),
                 MenuChoice("Kalıcı bellek ve bağlam", "memory"),
                 MenuChoice("Kurulum ve bakım", "maintenance"),
                 MenuChoice("Çıkış", "exit"),
             ]
         )
         return self.menu.ask("Ne yapmak istiyorsun?", choices)
+
+    def _open_web_interface(self) -> None:
+        from ..web import run_web_server
+
+        self.orchestrator.suspend()
+        self.console.print("[cyan]Yerel web çalışma alanı hazırlanıyor...[/cyan]")
+        run_web_server(
+            self.config,
+            self.registry,
+            self.database,
+            self.sessions,
+            self.memory,
+            self.tool_runtime,
+            self.root,
+            self.console,
+        )
+        self.console.print("[dim]Web arayüzü kapandı; terminal menüsüne dönüldü.[/dim]")
 
     def _choose_provider(self, message: str = "Provider seç") -> str | None:
         names = self.registry.names()

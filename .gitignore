@@ -4,3 +4,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 *.log
+web/node_modules/
+web/dist/
+web/.build-hash
+web/.deps-hash
+web/npm-debug.log*

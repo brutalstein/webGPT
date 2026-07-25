@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def choose_workspace(initial: Path | None = None) -> Path | None:
+def choose_workspace(initial: Path | None = None, *, allow_terminal_fallback: bool = True) -> Path | None:
     """Windows/macOS/Linux üzerinde klasör seçici açar; GUI yoksa terminal yolunu sorar."""
     try:
         import tkinter as tk
@@ -20,5 +20,7 @@ def choose_workspace(initial: Path | None = None) -> Path | None:
         root.destroy()
         return Path(selected) if selected else None
     except Exception:
+        if not allow_terminal_fallback:
+            return None
         value = input(f"Çalışma alanı klasörü [{initial or Path.cwd()}]: ").strip()
         return Path(value) if value else (initial or Path.cwd())

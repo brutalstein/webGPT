@@ -49,3 +49,19 @@ os.bat
 - Request ID ve token usage metadata
 - Retry/backoff: 408, 409, 429, 5xx
 - API key hiçbir log, config, payload metadata veya veritabanına yazılmaz
+
+
+## Yerel web kontrol düzlemi
+
+```text
+TerminalApplication ── Web seçeneği ──► FastAPI/Uvicorn (127.0.0.1)
+                                            │
+                               React/Vite production UI
+                                            │ WebSocket events
+                                            ▼
+                                      AgentWorker(1)
+                                            │
+                         Orchestrator + Gemini + LocalToolRuntime
+```
+
+Web ve terminal iki ayrı ajan uygulaması oluşturmaz. Aynı provider registry, SQLite store, memory store ve tool runtime paylaşılır. Web kapandığında provider güvenli biçimde durdurulur ve terminal onay handler'ı geri yüklenir.

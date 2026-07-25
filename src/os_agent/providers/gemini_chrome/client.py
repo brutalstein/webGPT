@@ -4,7 +4,8 @@ import os
 import re
 import threading
 import time
-from typing import Optional
+from collections.abc import Callable
+from typing import Any, Optional
 
 from playwright.sync_api import Error as PlaywrightError, Locator, Page, TimeoutError as PlaywrightTimeoutError
 
@@ -41,6 +42,23 @@ class GeminiClient:
         self.page = page
         self.is_thinking = False
         self.animation_thread: Optional[threading.Thread] = None
+        self._event_handler: Callable[[str, dict[str, Any]], None] | None = None
+        self._cancel_event = threading.Event()
+        self.last_cancelled = False
+
+    def set_event_handler(self, handler: Callable[[str, dict[str, Any]], None] | None) -> None:
+        self._event_handler = handler
+
+    def request_cancel(self) -> None:
+        self._cancel_event.set()
+
+    def _emit(self, event_type: str, payload: dict[str, Any] | None = None) -> None:
+        if self._event_handler is None:
+            return
+        try:
+            self._event_handler(event_type, payload or {})
+        except Exception:
+            pass
 
     def open(self) -> None:
         print("  -> Gemini açılıyor...")
@@ -197,6 +215,8 @@ class GeminiClient:
         if not prompt:
             return ""
 
+        self._cancel_event.clear()
+        self.last_cancelled = False
         self._wait_until_previous_generation_finishes(timeout_s=30)
         if not self.ensure_model_selected() and self.settings.strict_model_check:
             raise ProviderError(f"{self.settings.preferred_model} seçilemedi; mesaj gönderilmedi.")
@@ -213,14 +233,21 @@ class GeminiClient:
         baselines = self._capture_response_baselines()
         self._write_prompt(input_box, prompt)
         self._send_prompt(input_box)
+        self._emit("generation.phase", {"phase": "thinking"})
 
         self._start_animation()
         try:
             response = self._wait_for_new_response(baselines, timeout_s=60)
-            return self._wait_for_response_to_stabilize(
+            self._emit("generation.phase", {"phase": "responding"})
+            text = self._wait_for_response_to_stabilize(
                 response,
                 timeout_s=self.settings.response_timeout_seconds,
             )
+            self._emit(
+                "generation.cancelled" if self.last_cancelled else "generation.completed",
+                {"text": text, "characters": len(text)},
+            )
+            return text
         finally:
             self._stop_animation()
 
@@ -282,6 +309,10 @@ class GeminiClient:
     def _wait_for_new_response(self, baselines: dict[str, tuple[int, str]], timeout_s: int) -> Locator:
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
+            if self._cancel_event.is_set():
+                self._stop_generation_if_present()
+                self.last_cancelled = True
+                raise ProviderError("Gemini isteği kullanıcı tarafından durduruldu.")
             if self.page.is_closed():
                 raise ProviderError("Yanıt beklenirken Gemini sekmesi kapandı.")
             for selector in RESPONSE_SELECTORS:
@@ -309,13 +340,24 @@ class GeminiClient:
         while time.monotonic() < deadline:
             current = locator_text(response).strip()
             now = time.monotonic()
+            if self._cancel_event.is_set():
+                self._stop_generation_if_present()
+                self.last_cancelled = True
+                cleaned = self._clean_response(current or last_text)
+                if cleaned:
+                    self._emit("generation.snapshot", {"text": cleaned, "characters": len(cleaned)})
+                    return cleaned
+                raise ProviderError("Gemini isteği kullanıcı tarafından durduruldu.")
             if current != last_text:
                 last_text = current
                 unchanged_since = now
+                cleaned = self._clean_response(current)
+                if cleaned:
+                    self._emit("generation.snapshot", {"text": cleaned, "characters": len(cleaned)})
             elif current and unchanged_since is not None:
                 if now - unchanged_since >= self.settings.stable_seconds and not self._is_generating():
                     return self._clean_response(current)
-            time.sleep(0.5)
+            time.sleep(0.35)
 
         if last_text:
             print("\n[UYARI] Yanıt süresi doldu; alınabilen son metin gösteriliyor.")
@@ -335,6 +377,16 @@ class GeminiClient:
             if first_visible(self.page.locator(selector)) is not None:
                 return True
         return False
+
+    def _stop_generation_if_present(self) -> None:
+        for selector in STOP_BUTTON_SELECTORS:
+            try:
+                button = first_visible(self.page.locator(selector))
+                if button is not None:
+                    button.click(timeout=2_000)
+                    return
+            except PlaywrightError:
+                continue
 
     @staticmethod
     def _clean_response(text: str) -> str:

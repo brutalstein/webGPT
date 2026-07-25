@@ -19,3 +19,13 @@
   - https://developer.chrome.com/blog/remote-debugging-port
 - Playwright persistent context
   - https://playwright.dev/python/docs/api/class-browsertype
+
+## Yerel web arayüzü
+
+- React 19.2 ve `createRoot`
+  - https://react.dev/versions
+  - https://react.dev/reference/react-dom/client/createRoot
+- Vite 8 üretim derlemesi
+  - https://vite.dev/blog/announcing-vite8
+- FastAPI WebSocket
+  - https://fastapi.tiangolo.com/advanced/websockets/

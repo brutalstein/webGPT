@@ -33,6 +33,9 @@ class Provider(ABC):
     def send(self, prompt: str, session_id: str) -> ProviderResponse:
         """Bir mesaj gönderir veya güvenli kullanıcı köprüsünü başlatır."""
 
+    def cancel(self) -> None:
+        """Devam eden isteğin durdurulmasını ister. Provider desteklemiyorsa no-op."""
+
     @abstractmethod
     def status(self) -> dict[str, str]:
         """Provider çalışma durumunu döndürür."""

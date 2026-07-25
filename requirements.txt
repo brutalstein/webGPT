@@ -1,2 +1,4 @@
 playwright>=1.61,<2
 rich>=13.7,<15
+fastapi>=0.128,<1
+uvicorn[standard]>=0.48,<1

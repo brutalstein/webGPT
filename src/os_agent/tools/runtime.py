@@ -58,6 +58,7 @@ class LocalToolRuntime:
 
     def set_activity_handler(self, handler: ActivityHandler | None) -> None:
         self.executor.activity_handler = handler
+        self.agent.activity_handler = handler
 
     def run(
         self,

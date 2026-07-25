@@ -34,6 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace", metavar="KLASÖR", help="Bu çalıştırma için yerel çalışma alanını seçer ve kaydeder")
     parser.add_argument("--select-workspace", action="store_true", help="Grafik klasör seçiciyle çalışma alanını belirler")
     parser.add_argument("--workspace-info", action="store_true", help="Kayıtlı çalışma alanı ve araç durumunu gösterir")
+    parser.add_argument("--web", action="store_true", help="Yerel React web arayüzünü başlatır")
     return parser.parse_args()
 
 
@@ -156,7 +157,30 @@ def main() -> int:
         if direct_result is not None:
             return direct_result
 
-        app = TerminalApplication(config, registry, database, sessions, memory, console)
+        if args.web:
+            from .web import run_web_server
+
+            return run_web_server(
+                config,
+                registry,
+                database,
+                sessions,
+                memory,
+                tool_runtime,
+                ROOT,
+                console,
+            )
+
+        app = TerminalApplication(
+            config,
+            registry,
+            database,
+            sessions,
+            memory,
+            tool_runtime,
+            ROOT,
+            console,
+        )
         return app.run()
     except KeyboardInterrupt:
         console.print("\n[dim]OS kapatıldı.[/dim]")

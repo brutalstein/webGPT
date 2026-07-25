@@ -146,3 +146,28 @@ Kayıtlı alanı ve kullanılabilir araçları görmek için:
 Gemini seçili klasörü gerçek zamanlı olarak listeleyebilir, metin dosyalarını okuyabilir ve arayabilir. Kullanıcı onayıyla dosya oluşturabilir, içerik ekleyebilir, doğrulanmış metin değişiklikleri yapabilir, klasör oluşturabilir ve allowlist içindeki terminal programlarını çalıştırabilir.
 
 Yazma işlemleri atomik yapılır ve mevcut dosya önce `%LOCALAPPDATA%\OS\tool-backups` altında yedeklenir. Bütün araç çağrıları `%LOCALAPPDATA%\OS\logs\tool-audit.jsonl` dosyasına kaydedilir. Ayrıntılar `docs/TOOLS.md` içindedir.
+
+## Yerel React web çalışma alanı
+
+Terminal menüsünden **Web çalışma alanını aç** seçilebilir veya doğrudan:
+
+```powershell
+.\os.bat --web
+```
+
+komutu kullanılabilir. OS yalnızca `127.0.0.1` üzerinde çalışan FastAPI sunucusunu başlatır, React/Vite arayüzünü üretim modunda servis eder ve tek kullanımlık yerel açılış biletiyle varsayılan tarayıcıyı açar.
+
+Web çalışma alanında:
+
+- bilgisayardaki proje klasörü seçilir;
+- Gemini konuşmaları açılır, aranır ve kaldığı yerden sürdürülür;
+- görünür yanıt metni oluşurken artımlı snapshot olarak gösterilir;
+- `Thinking`, araç kullanımı, onay bekleme ve yanıt üretme durumları ayrı gösterilir;
+- çağrılan araçlar, argüman özeti, süre, sonuç ve hata durumu Activity panelinde izlenir;
+- dosya ağacı ve UTF-8 dosya önizlemesi görüntülenir;
+- dosya yazma ve terminal çağrıları tarayıcı içindeki onay penceresinden kabul veya reddedilir;
+- kalıcı bellek ve SQLite yedeği aynı arayüzden yönetilir.
+
+İlk web çalıştırmasında Node.js 22.12+ ve npm gerekir. Paketler yalnızca `package.json` değiştiğinde, React üretim derlemesi ise yalnızca web kaynakları değiştiğinde yeniden hazırlanır.
+
+`Thinking` göstergesi yalnızca çalışma aşamasını belirtir; modelin gizli düşünce zinciri gösterilmez. Gemini web sayfasında görünür yanıt parça parça güncelleniyorsa OS aynı görünür metni artımlı olarak arayüze iletir.

@@ -45,6 +45,7 @@ class AppConfig:
     local_tools: dict[str, Any]
     storage: dict[str, Any]
     cli: dict[str, Any]
+    web: dict[str, Any] = field(default_factory=dict)
 
     @property
     def data_dir(self) -> Path:
@@ -100,6 +101,7 @@ class AppConfig:
             "provider": provider.snapshot(),
             "storage": dict(self.storage),
             "local_tools": dict(self.local_tools),
+            "web": dict(self.web),
         }
 
 
@@ -154,6 +156,7 @@ def load_config(path: Path) -> AppConfig:
         local_tools=dict(raw.get("local_tools", {})),
         storage=dict(raw.get("storage", {})),
         cli=dict(raw.get("cli", {})),
+        web=dict(raw.get("web", {})),
     )
     config.state_dir.mkdir(parents=True, exist_ok=True)
     config.logs_dir.mkdir(parents=True, exist_ok=True)

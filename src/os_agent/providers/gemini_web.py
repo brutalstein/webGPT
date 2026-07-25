@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from typing import Any
 
 from playwright.sync_api import Error as PlaywrightError, TimeoutError as PlaywrightTimeoutError, sync_playwright
@@ -36,7 +37,9 @@ class GeminiWebProvider(Provider):
         self.settings = settings
         self.chrome_settings = GeminiChromeSettings.from_settings(app_config, settings)
         self.tool_runtime = tool_runtime or LocalToolRuntime(app_config)
-        self.tool_runtime.set_approval_handler(TerminalApprovalHandler())
+        if self.tool_runtime.executor.approval_handler is None:
+            self.tool_runtime.set_approval_handler(TerminalApprovalHandler())
+        self._event_handler: Callable[[str, dict[str, Any]], None] | None = None
         self._playwright_manager = None
         self._playwright = None
         self.browser: GeminiBrowserController | None = None
@@ -49,6 +52,15 @@ class GeminiWebProvider(Provider):
     @property
     def doctor(self) -> GeminiDoctor:
         return GeminiDoctor(self.chrome_settings)
+
+    def set_event_handler(self, handler: Callable[[str, dict[str, Any]], None] | None) -> None:
+        self._event_handler = handler
+        if self.client is not None:
+            self.client.set_event_handler(handler)
+
+    def cancel(self) -> None:
+        if self.client is not None:
+            self.client.request_cancel()
 
     def setup(self) -> None:
         # Google'ın otomasyon altındaki giriş sayfalarını engellemesini önlemek
@@ -82,6 +94,7 @@ class GeminiWebProvider(Provider):
             session = self.browser.launch(headed=self._headed, forced_mode=forced_mode)
             self._actual_mode = session.mode
             client = GeminiClient(self.chrome_settings, session.page)
+            client.set_event_handler(self._event_handler)
             client.open()
             # Headless modda sayfa ilk saniyede hazır olmayabilir. `headed=True`
             # yalnızca bekleme davranışını seçer; tarayıcı penceresi açmaz.
@@ -201,6 +214,7 @@ class GeminiWebProvider(Provider):
                 "mode": self._actual_mode,
                 "account": self.chrome_settings.expected_email,
                 "remote_url": state.get("remote_url", ""),
+                "cancelled": bool(self.client.last_cancelled),
             },
         )
 

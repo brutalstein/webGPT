@@ -155,5 +155,22 @@
       "*id_rsa*",
       "*id_ed25519*"
     ]
+  },
+  "web": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 8765,
+    "open_browser": true,
+    "frontend_source_dir": "web",
+    "frontend_dist_dir": "web/dist",
+    "approval_timeout_seconds": 600,
+    "session_limit": 60,
+    "event_history_limit": 600,
+    "websocket_queue_size": 1000,
+    "max_file_preview_bytes": 524288,
+    "workspace_tree_entries": 600,
+    "workspace_tree_depth": 3,
+    "frontend_install_timeout_seconds": 600,
+    "frontend_build_timeout_seconds": 180
   }
 }

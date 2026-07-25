@@ -5,7 +5,7 @@ from typing import Any
 
 from ..errors import ToolLoopError, ToolProtocolError
 from ..models import ProviderResponse
-from .executor import ToolExecutor
+from .executor import ActivityHandler, ToolExecutor
 from .protocol import ToolProtocol
 
 RawSender = Callable[[str, str], ProviderResponse]
@@ -18,12 +18,18 @@ class GeminiToolAgent:
         self.protocol = protocol
         self.executor = executor
         self.settings = settings
+        self.activity_handler: ActivityHandler | None = None
+
+    def _emit(self, event_type: str, payload: dict[str, Any]) -> None:
+        if self.activity_handler is not None:
+            self.activity_handler(event_type, payload)
 
     def run(self, sender: RawSender, user_prompt: str, session_id: str) -> ProviderResponse:
         self.executor.reset_run()
         max_rounds = max(1, int(self.settings.get("max_agent_rounds", 8)))
         correction_budget = max(0, int(self.settings.get("protocol_correction_retries", 1)))
         trace: list[dict[str, Any]] = []
+        self._emit("agent.started", {"session_id": session_id, "phase": "planning"})
         preflight_calls = self.protocol.workspace_preflight(user_prompt)
         preflight_results = self.executor.execute_many(preflight_calls, session_id) if preflight_calls else []
         trace.extend(
@@ -36,9 +42,12 @@ class GeminiToolAgent:
             }
             for result in preflight_results
         )
+        if preflight_results:
+            self._emit("agent.preflight", {"session_id": session_id, "calls": len(preflight_results)})
         response = sender(self.protocol.initial_prompt(user_prompt, preflight_results), session_id)
 
         for round_index in range(max_rounds):
+            self._emit("agent.round", {"session_id": session_id, "round": round_index + 1})
             try:
                 calls = self.protocol.parse_calls(response.text)
             except ToolProtocolError as exc:
@@ -57,6 +66,10 @@ class GeminiToolAgent:
                         "tool_rounds": round_index,
                         "tool_trace": trace,
                     }
+                )
+                self._emit(
+                    "agent.completed",
+                    {"session_id": session_id, "rounds": round_index, "tool_calls": len(trace)},
                 )
                 return ProviderResponse(
                     text=response.text,

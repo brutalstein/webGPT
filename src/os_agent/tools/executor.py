@@ -15,6 +15,17 @@ ApprovalHandler = Callable[[ApprovalRequest], ApprovalDecision]
 ActivityHandler = Callable[[str, dict[str, Any]], None]
 
 
+def _safe_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+    hidden = {"content", "old_text", "new_text"}
+    result: dict[str, Any] = {}
+    for key, value in arguments.items():
+        if key in hidden and isinstance(value, str):
+            result[key] = {"redacted": True, "characters": len(value)}
+        else:
+            result[key] = value
+    return result
+
+
 class ToolExecutor:
     def __init__(
         self,
@@ -54,21 +65,37 @@ class ToolExecutor:
         self.policy.require_tool(definition)
         self.registry.validate_arguments(call.name, call.arguments)
 
+        summary = tool.summarize(call.arguments)
         if self.activity_handler:
-            self.activity_handler("requested", {"tool": call.name, "arguments": call.arguments})
+            self.activity_handler(
+                "tool.requested",
+                {
+                    "call_id": call.call_id,
+                    "tool": call.name,
+                    "title": definition.title,
+                    "risk": definition.risk.value,
+                    "summary": summary,
+                    "arguments": _safe_arguments(call.arguments),
+                },
+            )
 
         try:
             if self.policy.requires_confirmation(definition, call.arguments) and call.name not in self._session_approvals:
                 if self.approval_handler is None:
                     raise ToolError(f"{definition.title} için kullanıcı onayı gerekiyor.")
                 decision = self.approval_handler(
-                    ApprovalRequest(call=call, definition=definition, summary=tool.summarize(call.arguments))
+                    ApprovalRequest(call=call, definition=definition, summary=summary)
                 )
                 if not decision.approved:
                     raise ToolError("Kullanıcı araç çağrısını reddetti.")
                 if decision.remember_for_session:
                     self._session_approvals.add(call.name)
 
+            if self.activity_handler:
+                self.activity_handler(
+                    "tool.started",
+                    {"call_id": call.call_id, "tool": call.name, "title": definition.title, "summary": summary},
+                )
             context = ToolContext(workspace=self.workspace, settings=self.settings, session_id=session_id)
             payload = tool.execute(context, call.arguments)
             duration = int((time.monotonic() - started) * 1000)
@@ -107,7 +134,16 @@ class ToolExecutor:
         )
         if self.activity_handler:
             self.activity_handler(
-                "completed",
-                {"tool": call.name, "ok": result.ok, "duration_ms": result.duration_ms},
+                "tool.completed" if result.ok else "tool.failed",
+                {
+                    "call_id": call.call_id,
+                    "tool": call.name,
+                    "title": definition.title,
+                    "summary": summary,
+                    "ok": result.ok,
+                    "duration_ms": result.duration_ms,
+                    "preview": result.content[:1200],
+                    "error": result.error,
+                },
             )
         return result

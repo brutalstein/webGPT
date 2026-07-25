@@ -1,9 +1,12 @@
 OS Modern Terminal Workspace
-Version: 0.5.0
-Target base: brutalstein/webGPT c20e6680d62f52716a3ce4bf6ba868318a8b87d6
+Version: 0.7.0
+Target base: brutalstein/webGPT 5e9e5bc6c2220b963c6bb2352c89959fbb511409
 Primary entry: os.bat
 Gemini provider: Chrome CDP, headless by default
 ChatGPT provider: OpenAI Responses + Conversations API, terminal-only
 Secret storage: Windows DPAPI or OPENAI_API_KEY
 State engine: SQLite WAL
 Legacy migration: sessions.json + memory.json
+Web UI: React 19 + Vite 8 production bundle
+Web backend: FastAPI + WebSocket, loopback-only
+Agent transport: bounded event hub + single Playwright worker

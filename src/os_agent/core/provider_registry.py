@@ -34,6 +34,11 @@ class ProviderRegistry:
         self._instances[settings.name] = instance
         return instance
 
+    def peek(self, name: str) -> Provider | None:
+        """Provider örneğini oluşturmadan mevcut instance'ı döndürür."""
+        key = name.casefold().strip()
+        return self._instances.get(key)
+
     def close_all(self) -> None:
         for provider in self._instances.values():
             try:
