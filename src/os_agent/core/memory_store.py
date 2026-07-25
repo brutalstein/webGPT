@@ -1,62 +1,71 @@
 from __future__ import annotations
 
-import json
-import threading
 from pathlib import Path
 
 from ..models import utc_now_iso
+from .storage import StateDatabase
 
 
 class MemoryStore:
-    def __init__(self, path: Path):
-        self.path = path
-        self._lock = threading.RLock()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+    """Global ve provider bağlamını aynı SQLite durum veritabanında saklar."""
 
-    def _load(self) -> dict:
-        if not self.path.exists():
-            return {"global": {}, "providers": {}}
-        try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                data.setdefault("global", {})
-                data.setdefault("providers", {})
-                return data
-        except (OSError, json.JSONDecodeError):
-            pass
-        return {"global": {}, "providers": {}}
-
-    def _save(self, data: dict) -> None:
-        temp = self.path.with_suffix(".tmp")
-        temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        temp.replace(self.path)
+    def __init__(self, database: StateDatabase | Path, legacy_json_path: Path | None = None):
+        if isinstance(database, StateDatabase):
+            self.database = database
+        else:
+            source = Path(database)
+            if source.suffix.casefold() == ".json":
+                legacy_json_path = legacy_json_path or source
+                source = source.with_name("os-state.db")
+            self.database = StateDatabase(source)
+        if legacy_json_path is not None:
+            self.database.import_legacy_memory(legacy_json_path)
 
     def set(self, key: str, value: str, provider: str | None = None) -> None:
         key = key.strip()
         value = value.strip()
         if not key or not value:
             raise ValueError("Bellek anahtarı ve değeri boş olamaz.")
-        with self._lock:
-            data = self._load()
-            target = data["global"] if provider is None else data["providers"].setdefault(provider, {})
-            target[key] = {"value": value, "updated_at": utc_now_iso()}
-            self._save(data)
+        scope = "provider" if provider else "global"
+        provider_key = provider.casefold().strip() if provider else ""
+        with self.database.transaction() as connection:
+            connection.execute(
+                """
+                INSERT INTO context_entries(scope, provider, key, value, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(scope, provider, key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                """,
+                (scope, provider_key, key, value, utc_now_iso()),
+            )
 
     def delete(self, key: str, provider: str | None = None) -> bool:
-        with self._lock:
-            data = self._load()
-            target = data["global"] if provider is None else data["providers"].setdefault(provider, {})
-            removed = target.pop(key, None) is not None
-            if removed:
-                self._save(data)
-            return removed
+        scope = "provider" if provider else "global"
+        provider_key = provider.casefold().strip() if provider else ""
+        with self.database.transaction() as connection:
+            cursor = connection.execute(
+                "DELETE FROM context_entries WHERE scope = ? AND provider = ? AND key = ?",
+                (scope, provider_key, key.strip()),
+            )
+        return cursor.rowcount > 0
 
     def combined(self, provider: str) -> dict[str, str]:
-        with self._lock:
-            data = self._load()
-        result = {key: item["value"] for key, item in data["global"].items()}
-        for key, item in data["providers"].get(provider, {}).items():
-            result[key] = item["value"]
+        provider_key = provider.casefold().strip()
+        with self.database.read() as connection:
+            rows = connection.execute(
+                """
+                SELECT scope, key, value
+                FROM context_entries
+                WHERE (scope = 'global' AND provider = '')
+                   OR (scope = 'provider' AND provider = ?)
+                ORDER BY CASE scope WHEN 'global' THEN 0 ELSE 1 END, key
+                """,
+                (provider_key,),
+            ).fetchall()
+        result: dict[str, str] = {}
+        for row in rows:
+            result[str(row["key"])] = str(row["value"])
         return result
 
     def render_context(self, provider: str, max_chars: int) -> str:
@@ -64,5 +73,4 @@ class MemoryStore:
         if not entries:
             return ""
         lines = [f"- {key}: {value}" for key, value in sorted(entries.items())]
-        text = "\n".join(lines)
-        return text[:max_chars]
+        return "\n".join(lines)[:max_chars]

@@ -16,3 +16,7 @@ class ProviderUnavailableError(ProviderError):
 
 class ClipboardBridgeError(ProviderError):
     pass
+
+
+class StorageError(OSErrorBase):
+    pass

@@ -94,4 +94,4 @@ class ManualGeminiSetup:
             encoding="utf-8",
         )
         print("[BAŞARILI] Normal Chrome hesap kurulumu kaydedildi.")
-        print("Şimdi start_gemini_visible.bat çalıştırabilirsin.")
+        print("Artık Chrome penceresini kapatıp os.bat üzerinden arka planda devam edebilirsin.")

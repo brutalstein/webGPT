@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import threading
 import time
@@ -74,13 +75,13 @@ class GeminiClient:
             if state == "blocked_signin":
                 raise ProviderError(
                     "Google, otomasyon altında giriş sayfasını engelledi. Bu pencerede giriş yapma. "
-                    "Önce setup_gemini.bat ile otomasyonsuz normal Chrome'da giriş yap; pencereyi kapat; "
-                    "sonra start_gemini_visible.bat çalıştır."
+                    "os.bat içindeki Kurulum ve bakım menüsünden Google hesabı ve Gemini kurulumu seç; "
+                    "giriş tamamlanınca Chrome'u kapat."
                 )
             if state == "login_required":
                 raise ProviderError(
                     "Gemini oturum çerezi yok veya süresi dolmuş. Otomasyon sayfasında giriş yapma; "
-                    "setup_gemini.bat çalıştırarak normal Chrome'da hesabı yeniden aç."
+                    "os.bat içindeki Kurulum ve bakım menüsünden hesabı yeniden aç."
                 )
             if state == "temporary_error" and headed:
                 self._click_retry_if_present()
@@ -89,8 +90,8 @@ class GeminiClient:
                 notice_printed = True
             if not headed and state != "ready":
                 raise ProviderError(
-                    "Gemini arka planda hazır değil. Önce start_gemini_visible.bat ile görünür modda "
-                    "ara ekranları tamamla."
+                    "Gemini arka planda hazır değil. Kurulum ve bakım menüsünden hesap kurulumunu tamamla; "
+                    "gerekirse os.bat --visible ile hata ayıklama yap."
                 )
             time.sleep(1.0)
 
@@ -296,7 +297,7 @@ class GeminiClient:
                         return candidate
             state = self.detect_page_state()
             if state in {"blocked_signin", "login_required"}:
-                raise ProviderError("Gemini oturumu mesaj gönderilirken sona erdi. setup_gemini.bat çalıştır.")
+                raise ProviderError("Gemini oturumu mesaj gönderilirken sona erdi. Kurulum ve bakım menüsünden Google hesabı kurulumunu yenile.")
             time.sleep(0.25)
         raise ProviderError("Yeni Gemini yanıtı 60 saniye içinde başlamadı.")
 
@@ -344,6 +345,9 @@ class GeminiClient:
         return cleaned
 
     def _start_animation(self) -> None:
+        if os.environ.get("OS_CLI_OWNS_SPINNER") == "1":
+            self.animation_thread = None
+            return
         self.is_thinking = True
         self.animation_thread = threading.Thread(target=self._thinking_animation, daemon=True)
         self.animation_thread.start()
@@ -352,7 +356,8 @@ class GeminiClient:
         self.is_thinking = False
         if self.animation_thread is not None:
             self.animation_thread.join(timeout=1.0)
-        print("\r" + " " * 38 + "\r", end="", flush=True)
+            print("\r" + " " * 38 + "\r", end="", flush=True)
+        self.animation_thread = None
 
     def _thinking_animation(self) -> None:
         chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"

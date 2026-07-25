@@ -4,6 +4,15 @@
   "language": "tr-TR",
   "inject_local_memory": false,
   "memory_context_max_chars": 6000,
+  "storage": {
+    "database_file": "os-state.db",
+    "automatic_backup": true,
+    "backup_interval_hours": 24,
+    "backup_keep": 10
+  },
+  "cli": {
+    "recent_session_limit": 30
+  },
   "providers": {
     "gemini": {
       "kind": "gemini_chrome_cdp",
@@ -25,19 +34,17 @@
       "launch_mode": "cdp",
       "fallback_to_persistent": true,
       "cdp_start_retries": 3,
-      "cdp_port_timeout_seconds": 20,
-      "resume_latest_session_on_start": true
+      "cdp_port_timeout_seconds": 20
     },
     "chatgpt": {
       "kind": "chatgpt_manual_web",
-      "enabled": true,
+      "enabled": false,
       "expected_email": "ebru112263gundes@gmail.com",
       "preferred_browser": "chrome",
       "preferred_model": "Hesap varsayılanı",
       "start_url": "https://chatgpt.com/",
       "page_timeout_seconds": 60,
-      "login_timeout_seconds": 600,
-      "resume_latest_session_on_start": true
+      "login_timeout_seconds": 600
     }
   },
   "local_tools": {

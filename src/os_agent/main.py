@@ -1,236 +1,144 @@
 from __future__ import annotations
 
 import argparse
-import shutil
-import sys
+import os
 from pathlib import Path
 
+from rich.console import Console
+from rich.panel import Panel
+
 from .config import AppConfig, load_config
-from .core.commands import HELP_TEXT, parse_command
 from .core.memory_store import MemoryStore
-from .core.orchestrator import Orchestrator
 from .core.provider_registry import ProviderRegistry
 from .core.session_store import SessionStore
+from .core.storage import StateDatabase
 from .errors import OSErrorBase
 from .providers.chatgpt_manual import ChatGPTManualWebProvider
 from .providers.gemini_web import GeminiWebProvider
+from .ui.app import TerminalApplication
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="OS sağlayıcı tabanlı AI terminali")
-    parser.add_argument("--provider", choices=("gemini", "chatgpt"), help="Başlangıç provider'ı")
-    parser.add_argument("--setup", choices=("gemini", "chatgpt"), help="Provider hesap kurulumunu açar")
-    parser.add_argument(
-        "--reset-profiles",
-        nargs="?",
-        const="all",
-        choices=("all", "gemini", "chatgpt"),
-        help="Ayrılmış tarayıcı profillerini yedekleyip sıfırlar",
-    )
-    parser.add_argument("--doctor", action="store_true", help="Gemini Chrome tanı raporu üretir")
-    parser.add_argument("--repair-gemini", action="store_true", help="Gemini profilini oturumu silmeden onarır")
-    parser.add_argument("--stop-gemini", action="store_true", help="Yalnızca OS Gemini Chrome süreçlerini kapatır")
+    parser = argparse.ArgumentParser(description="OS kişisel AI terminali")
+    parser.add_argument("--setup", action="store_true", help="Google hesabı ve Gemini kurulumunu açar")
+    parser.add_argument("--doctor", action="store_true", help="Gemini sistem tanısı üretir")
+    parser.add_argument("--repair", action="store_true", help="Gemini profilini oturumu silmeden onarır")
+    parser.add_argument("--backup", action="store_true", help="Durum veritabanını hemen yedekler")
+    parser.add_argument("--visible", action="store_true", help="Gemini Chrome'u görünür hata ayıklama modunda açar")
     return parser.parse_args()
 
 
 def build_registry(config: AppConfig) -> ProviderRegistry:
     registry = ProviderRegistry(config)
     registry.register("gemini_chrome_cdp", lambda app, settings: GeminiWebProvider(app, settings))
+    # Provider mimarisi korunur; ChatGPT config içinde etkinleştirilene kadar CLI'da görünmez.
     registry.register("chatgpt_manual_web", lambda app, settings: ChatGPTManualWebProvider(app, settings))
     return registry
 
 
-def reset_profiles(config: AppConfig, registry: ProviderRegistry, target: str) -> None:
-    targets = {"gemini", "chatgpt"} if target == "all" else {target}
-    for name in targets:
-        if name == "gemini":
-            provider = registry.get("gemini")
-            assert isinstance(provider, GeminiWebProvider)
-            provider.doctor.backup_and_reset()
-            continue
-        path = config.data_dir / "browser-profiles" / "chatgpt"
-        shutil.rmtree(path, ignore_errors=True)
-        print(f"[PROFİL] Sıfırlandı: {path}")
+def prepare_storage(config: AppConfig) -> tuple[StateDatabase, SessionStore, MemoryStore]:
+    database_preexisted = config.database_path.exists()
+    database = StateDatabase(config.database_path)
+
+    if database_preexisted and bool(config.storage.get("automatic_backup", True)):
+        database.backup_if_due(
+            config.backups_dir,
+            interval_hours=max(1, int(config.storage.get("backup_interval_hours", 24))),
+            keep=max(1, int(config.storage.get("backup_keep", 10))),
+        )
+
+    imported_sessions = database.import_legacy_sessions(config.sessions_path)
+    imported_memory = database.import_legacy_memory(config.memory_path)
+    if imported_sessions or imported_memory:
+        database.copy_legacy_files(
+            [config.sessions_path, config.memory_path],
+            config.backups_dir / "legacy-json",
+        )
+
+    health = database.quick_check()
+    if health.casefold() != "ok":
+        from .errors import StorageError
+
+        raise StorageError(f"SQLite bütünlük kontrolü başarısız: {health}")
+
+    return database, SessionStore(database), MemoryStore(database)
 
 
-def print_banner() -> None:
-    print("=" * 74)
-    print("             OS - PROVIDER TABANLI KİŞİSEL AI TERMİNALİ")
-    print("=" * 74)
-
-
-def print_status(orchestrator: Orchestrator) -> None:
-    status = orchestrator.provider.status()
-    for key, value in status.items():
-        print(f"  {key}: {value}")
-    print(f"  local_session: {orchestrator.session_id}")
-
-
-def handle_command(command, orchestrator: Orchestrator, registry: ProviderRegistry) -> bool:
-    if command.name in {"exit", "quit", "çıkış", "kapat"}:
-        return False
-    if command.name in {"help", "yardım"}:
-        print(HELP_TEXT)
-        return True
-    if command.name == "providers":
-        print("Provider'lar: " + ", ".join(registry.names()))
-        return True
-    if command.name == "use":
-        if not command.argument:
-            print("Kullanım: /use gemini veya /use chatgpt")
-            return True
-        orchestrator.switch_provider(command.argument)
-        print(f"[PROVIDER] Aktif: {orchestrator.provider_name}")
-        return True
-    if command.name == "new":
-        print(f"[OTURUM] Yeni oturum: {orchestrator.new_session()}")
-        return True
-    if command.name == "resume":
-        if not command.argument:
-            print("Kullanım: /resume OTURUM_ID")
-            return True
-        session_id = orchestrator.resume_session(command.argument)
-        print(f"[OTURUM] Devam ediliyor: {session_id} | provider: {orchestrator.provider_name}")
-        return True
-    if command.name == "session":
-        item = orchestrator.current_session()
-        state = item.get("provider_state", {})
-        remote_url = state.get("remote_url", "") if isinstance(state, dict) else ""
-        print(f"  id: {item['session_id']}")
-        print(f"  provider: {item['provider']}")
-        print(f"  title: {item.get('title', '')}")
-        print(f"  turn_count: {len(item.get('turns', []))}")
-        print(f"  remote_url: {remote_url or 'henüz oluşmadı'}")
-        return True
-    if command.name == "sessions":
-        rows = orchestrator.sessions.list_recent(10)
-        if not rows:
-            print("Kayıtlı oturum yok.")
-        for item in rows:
-            state = item.get("provider_state", {})
-            remote = "uzak=evet" if isinstance(state, dict) and state.get("remote_url") else "uzak=hayır"
-            print(
-                f"- {item['session_id']} | {item['provider']} | {item.get('title', '')} | "
-                f"{len(item.get('turns', []))} mesaj | {remote} | {item.get('updated_at', '')}"
-            )
-        return True
-    if command.name == "remember":
-        key, separator, value = command.argument.partition("=")
-        if not separator:
-            print("Kullanım: /remember anahtar=değer")
-            return True
-        orchestrator.memory.set(key, value)
-        print(f"[BELLEK] Kaydedildi: {key.strip()}")
-        return True
-    if command.name == "forget":
-        if not command.argument:
-            print("Kullanım: /forget anahtar")
-            return True
-        removed = orchestrator.memory.delete(command.argument)
-        print("[BELLEK] Silindi." if removed else "[BELLEK] Anahtar bulunamadı.")
-        return True
-    if command.name == "memories":
-        entries = orchestrator.memory.combined(orchestrator.provider_name)
-        if not entries:
-            print("Yerel OS belleği boş.")
-        for key, value in sorted(entries.items()):
-            print(f"- {key}: {value}")
-        return True
-    if command.name == "status":
-        print_status(orchestrator)
-        return True
-
-    print(f"Bilinmeyen komut: /{command.name}. /help yazabilirsin.")
-    return True
-
-
-def run_terminal(config: AppConfig, registry: ProviderRegistry, provider_name: str) -> int:
-    sessions = SessionStore(config.sessions_path)
-    memory = MemoryStore(config.memory_path)
-    orchestrator = Orchestrator(config, registry, sessions, memory, provider_name)
-    orchestrator.ensure_started()
-
-    print(f"\n[HAZIR] Aktif provider: {provider_name}")
-    print("Komutları görmek için /help yaz.\n")
-
-    while True:
-        try:
-            text = input(f"OS[{orchestrator.provider_name}]> ").strip()
-        except EOFError:
-            break
-        if not text:
-            continue
-
-        command = parse_command(text)
-        if command is not None:
-            if not handle_command(command, orchestrator, registry):
-                break
-            continue
-
-        try:
-            response = orchestrator.send(text)
-            print(f"\n{response.provider}:\n{response.text}\n")
-            print("-" * 74)
-        except OSErrorBase as exc:
-            print(f"\n[HATA] {exc}\n")
-        except KeyboardInterrupt:
-            print("\n[İPTAL] İşlem kesildi.\n")
-
-    return 0
+def run_direct_action(
+    args: argparse.Namespace,
+    config: AppConfig,
+    registry: ProviderRegistry,
+    database: StateDatabase,
+    console: Console,
+) -> int | None:
+    provider = registry.get("gemini")
+    if args.setup:
+        provider.setup()
+        return 0
+    if args.doctor:
+        report = provider.doctor.run()
+        console.print(f"[green]Rapor oluşturuldu:[/green] {report}")
+        return 0
+    if args.repair:
+        provider.doctor.soft_repair()
+        console.print("[green]Yumuşak onarım tamamlandı.[/green]")
+        return 0
+    if args.backup:
+        path = database.backup_now(
+            config.backups_dir,
+            keep=max(1, int(config.storage.get("backup_keep", 10))),
+        )
+        console.print(f"[green]Yedek oluşturuldu:[/green] {path}")
+        return 0
+    return None
 
 
 def main() -> int:
     args = parse_args()
-    config = load_config(ROOT / "config.json")
-    print_banner()
-    registry = build_registry(config)
+    if args.visible:
+        os.environ["OS_GEMINI_HEADED"] = "1"
+    else:
+        os.environ.setdefault("OS_GEMINI_HEADED", "0")
+    os.environ.setdefault("OS_GEMINI_MODE", "cdp")
+    os.environ.setdefault("OS_CLI_OWNS_SPINNER", "1")
+
+    console = Console(highlight=False)
+    registry: ProviderRegistry | None = None
+    database: StateDatabase | None = None
 
     try:
-        if args.doctor:
-            provider = registry.get("gemini")
-            assert isinstance(provider, GeminiWebProvider)
-            provider.doctor.run()
-            return 0
+        config = load_config(ROOT / "config.json")
+        database, sessions, memory = prepare_storage(config)
+        registry = build_registry(config)
 
-        if args.repair_gemini:
-            provider = registry.get("gemini")
-            assert isinstance(provider, GeminiWebProvider)
-            provider.doctor.soft_repair()
-            return 0
+        direct_result = run_direct_action(args, config, registry, database, console)
+        if direct_result is not None:
+            return direct_result
 
-        if args.stop_gemini:
-            provider = registry.get("gemini")
-            assert isinstance(provider, GeminiWebProvider)
-            from .providers.gemini_chrome.processes import terminate_profile_processes
-
-            stopped = terminate_profile_processes(provider.chrome_settings.profile_dir)
-            print(f"[GEMINI] Kapatılan OS Chrome süreci: {len(stopped)}")
-            return 0
-
-        if args.reset_profiles:
-            reset_profiles(config, registry, args.reset_profiles)
-            return 0
-
-        if args.setup:
-            provider = registry.get(args.setup)
-            provider.setup()
-            return 0
-
-        provider_name = args.provider or config.default_provider
-        return run_terminal(config, registry, provider_name)
+        app = TerminalApplication(config, registry, database, sessions, memory, console)
+        return app.run()
     except KeyboardInterrupt:
-        print("\n[SİSTEM] Manuel olarak durduruldu.")
+        console.print("\n[dim]OS kapatıldı.[/dim]")
         return 130
     except OSErrorBase as exc:
-        print(f"\n[KRİTİK HATA] {exc}")
+        console.print(Panel(str(exc), title="[bold red]Kritik hata[/bold red]", border_style="red"))
         return 1
     except Exception as exc:
-        print(f"\n[BEKLENMEYEN HATA] {type(exc).__name__}: {exc}")
+        console.print(
+            Panel(
+                f"{type(exc).__name__}: {exc}",
+                title="[bold red]Beklenmeyen hata[/bold red]",
+                border_style="red",
+            )
+        )
         return 1
     finally:
-        registry.close_all()
+        if registry is not None:
+            registry.close_all()
+        if database is not None:
+            database.checkpoint()
 
 
 if __name__ == "__main__":

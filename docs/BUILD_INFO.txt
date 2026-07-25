@@ -1,0 +1,7 @@
+OS Modern Terminal Workspace
+Version: 0.4.0
+Target base: brutalstein/webGPT main after persistent-session patch
+Primary entry: os.bat
+Primary provider: Gemini Chrome CDP, headless by default
+State engine: SQLite WAL
+Legacy migration: sessions.json + memory.json

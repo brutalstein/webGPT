@@ -56,8 +56,8 @@ class GeminiWebProvider(Provider):
         )
         if not self.chrome_settings.setup_marker.exists() and not any(path.exists() for path in cookie_candidates):
             raise ProviderError(
-                "Gemini hesabı henüz normal Chrome ile kurulmamış. Önce setup_gemini.bat çalıştır; "
-                "Google hesabına normal Chrome'da giriş yap; pencereyi tamamen kapat."
+                "Gemini hesabı henüz kurulmamış. os.bat içindeki Kurulum ve bakım menüsünden "
+                "Google hesabı ve Gemini kurulumu seç; giriş tamamlanınca Chrome'u tamamen kapat."
             )
 
         default_headed = "0" if self.chrome_settings.headless else "1"

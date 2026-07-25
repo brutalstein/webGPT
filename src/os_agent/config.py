@@ -22,6 +22,17 @@ class ProviderSettings:
     def get(self, key: str, default: Any = None) -> Any:
         return self.raw.get(key, default)
 
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "kind": self.kind,
+            "enabled": self.enabled,
+            "expected_email": self.expected_email,
+            "preferred_browser": self.preferred_browser,
+            "preferred_model": self.preferred_model,
+            "options": dict(self.raw),
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class AppConfig:
@@ -32,6 +43,8 @@ class AppConfig:
     memory_context_max_chars: int
     providers: dict[str, ProviderSettings]
     local_tools: dict[str, Any]
+    storage: dict[str, Any]
+    cli: dict[str, Any]
 
     @property
     def data_dir(self) -> Path:
@@ -41,12 +54,27 @@ class AppConfig:
         return Path.home() / f".{self.app_name.casefold()}"
 
     @property
+    def state_dir(self) -> Path:
+        return self.data_dir / "state"
+
+    @property
+    def database_path(self) -> Path:
+        filename = str(self.storage.get("database_file", "os-state.db")).strip() or "os-state.db"
+        return self.state_dir / Path(filename).name
+
+    @property
+    def backups_dir(self) -> Path:
+        return self.data_dir / "backups"
+
+    @property
     def sessions_path(self) -> Path:
-        return self.data_dir / "state" / "sessions.json"
+        """Eski JSON session dosyasının göç yolu."""
+        return self.state_dir / "sessions.json"
 
     @property
     def memory_path(self) -> Path:
-        return self.data_dir / "state" / "memory.json"
+        """Eski JSON context dosyasının göç yolu."""
+        return self.state_dir / "memory.json"
 
     @property
     def logs_dir(self) -> Path:
@@ -61,6 +89,17 @@ class AppConfig:
         if not settings.enabled:
             raise ConfigurationError(f"Provider kapalı: {name}")
         return settings
+
+    def snapshot(self, provider_name: str) -> dict[str, Any]:
+        provider = self.provider(provider_name)
+        return {
+            "app_name": self.app_name,
+            "language": self.language,
+            "inject_local_memory": self.inject_local_memory,
+            "memory_context_max_chars": self.memory_context_max_chars,
+            "provider": provider.snapshot(),
+            "storage": dict(self.storage),
+        }
 
 
 def _require_email(value: Any, field_name: str) -> str:
@@ -100,6 +139,8 @@ def load_config(path: Path) -> AppConfig:
     default_provider = str(raw.get("default_provider", "")).casefold().strip()
     if default_provider not in providers:
         raise ConfigurationError("default_provider, providers içinde tanımlı değil.")
+    if not providers[default_provider].enabled:
+        raise ConfigurationError("default_provider etkin olmalı.")
 
     app_name = str(raw.get("app_name", "OS")).strip() or "OS"
     config = AppConfig(
@@ -110,7 +151,10 @@ def load_config(path: Path) -> AppConfig:
         memory_context_max_chars=max(500, int(raw.get("memory_context_max_chars", 6000))),
         providers=providers,
         local_tools=dict(raw.get("local_tools", {})),
+        storage=dict(raw.get("storage", {})),
+        cli=dict(raw.get("cli", {})),
     )
-    config.data_dir.mkdir(parents=True, exist_ok=True)
+    config.state_dir.mkdir(parents=True, exist_ok=True)
     config.logs_dir.mkdir(parents=True, exist_ok=True)
+    config.backups_dir.mkdir(parents=True, exist_ok=True)
     return config

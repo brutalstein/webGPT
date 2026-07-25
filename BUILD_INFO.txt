@@ -1,8 +1,0 @@
-OS Gemini Chrome Robust Fix
-Version: 3.0.0
-Build date: 2026-07-25
-Primary Gemini launch: direct Google Chrome subprocess + IPv4 CDP
-Google sign-in: normal Chrome without Playwright/CDP
-Fallback: Playwright persistent context with Chromium sandbox enabled
-Unsafe --no-sandbox: not used
-Automated tests: 13 passed

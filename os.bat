@@ -4,6 +4,8 @@ chcp 65001 >nul
 cd /d "%~dp0"
 title OS - Kisisel AI Terminali
 set "PYTHONUTF8=1"
+set "OS_GEMINI_HEADED=0"
+set "OS_GEMINI_MODE=cdp"
 
 set "PYTHON_BOOTSTRAP="
 where py >nul 2>&1

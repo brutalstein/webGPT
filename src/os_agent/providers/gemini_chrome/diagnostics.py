@@ -78,7 +78,7 @@ class GeminiDoctor:
             (
                 "OK" if marker_ok else "UYARI",
                 "Normal Chrome hesap kurulumu",
-                "Kurulum işareti mevcut." if marker_ok else "setup_gemini.bat henüz tamamlanmamış olabilir.",
+                "Kurulum işareti mevcut." if marker_ok else "OS içindeki Google hesabı kurulumu henüz tamamlanmamış olabilir.",
             )
         )
 
@@ -133,7 +133,7 @@ class GeminiDoctor:
         findings.extend(
             [
                 ("OK", "Sandbox", "Projede --no-sandbox kullanılmaz; persistent fallback sandbox'ı açık başlatır."),
-                ("OK", "Giriş yöntemi", "Google girişi yalnızca otomasyonsuz setup_gemini.bat aşamasında yapılır."),
+                ("OK", "Giriş yöntemi", "Google girişi yalnızca OS Kurulum ve bakım menüsündeki otomasyonsuz kurulum aşamasında yapılır."),
                 ("OK", "CDP güvenliği", "127.0.0.1 ve standart dışı user-data-dir kullanılır."),
                 ("BİLGİ", "Kişisel talimatlar", "Script Gemini ayarlarını değiştirmez; doğru hesap oturumundaki talimatlar kullanılır."),
             ]
@@ -154,10 +154,10 @@ class GeminiDoctor:
             [
                 "",
                 "ÖNERİLEN SIRA:",
-                "1. İlk giriş veya oturum yenileme: setup_gemini.bat",
-                "2. Görünür doğrulama: start_gemini_visible.bat",
-                "3. Hata devam ederse: repair_gemini_soft.bat",
-                "4. Son çare ve yedekli sıfırlama: reset_gemini_profile.bat",
+                "1. os.bat → Kurulum ve bakım → Google hesabı ve Gemini kurulumu",
+                "2. Gerekirse görünür doğrulama: os.bat --visible",
+                "3. Kurulum ve bakım → Oturumu silmeden yumuşak onarım",
+                "4. Son çare: profil yedekli sıfırlama işlemini sonraki bakım sürümünde uygula",
                 "5. Kurumsal politika/antivirüs varsa ilgili web korumasını ve TLS denetimini kontrol et.",
             ]
         )
