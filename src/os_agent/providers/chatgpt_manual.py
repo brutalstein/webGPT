@@ -3,7 +3,6 @@ from __future__ import annotations
 import time
 from typing import Any
 
-import pyperclip
 from playwright.sync_api import Error as PlaywrightError, sync_playwright
 
 from ..browser.manager import PersistentBrowser
@@ -11,30 +10,38 @@ from ..config import AppConfig, ProviderSettings
 from ..errors import ClipboardBridgeError, ProviderError
 from ..models import ProviderResponse
 from ..core.provider import Provider
+from .chatgpt_companion import (
+    ChatGPTCompanionSettings,
+    ChatGPTWindowController,
+    ClipboardExchange,
+)
 from .chatgpt_setup import ManualChatGPTSetup
 
 
 class ChatGPTManualWebProvider(Provider):
-    """
-    ChatGPT web hesabını ayrı kalıcı profilde açan kullanıcı kontrollü köprü.
+    """ChatGPT için kalıcı, kullanıcı kontrollü arka plan companion provider.
 
-    Bu provider ChatGPT DOM'undan cevap kazımaz. Prompt panoya kopyalanır;
-    kullanıcı tarayıcıda gönderir ve tamamlanan cevabı kendisi panoya kopyalar.
-    Yerel session kaydı, kullanıcı tarafından açılmış ChatGPT konuşma URL'sini saklar.
+    Chrome ayrı ve kalıcı bir profilde açık tutulur. Boşta iken pencere minimize
+    edilir. Terminalden yazılan prompt panoya aktarılır; kullanıcı mesajı gönderip
+    tamamlanan yanıtı panoya kopyalar. ChatGPT DOM'undan veri veya çıktı otomatik
+    olarak kazınmaz.
     """
 
     name = "chatgpt"
-    mode = "manual_web_bridge"
+    mode = "background_companion"
 
     def __init__(self, app_config: AppConfig, settings: ProviderSettings):
         self.app_config = app_config
         self.settings = settings
+        self.companion_settings = ChatGPTCompanionSettings.from_provider(settings)
         self._playwright_manager = None
         self._playwright = None
         self.browser: PersistentBrowser | None = None
         self._started = False
         self._session_id: str | None = None
         self.manual_setup = ManualChatGPTSetup(app_config, settings)
+        self.window = ChatGPTWindowController(self.manual_setup.profile_dir)
+        self.clipboard = ClipboardExchange()
 
     def _ensure_runtime(self) -> None:
         if self._playwright is not None:
@@ -64,11 +71,21 @@ class ChatGPTManualWebProvider(Provider):
 
         self._ensure_runtime()
         assert self.browser is not None
-        page = self.browser.launch(headless=False, url=str(self.settings.get("start_url", "https://chatgpt.com/")))
-        page.bring_to_front()
+        page = self.browser.launch(
+            headless=False,
+            url=str(self.settings.get("start_url", "https://chatgpt.com/")),
+        )
         self._started = True
-        print(f"[CHATGPT] Görünür web köprüsü açık. Beklenen hesap: {self.settings.expected_email}")
-        print("[CHATGPT] Hesap, bellek ve model seçimi web arayüzünde kullanıcı tarafından yönetilir.")
+
+        self.window.wait_for_window(self.companion_settings.window_wait_seconds)
+        if self.companion_settings.background_idle:
+            self.window.minimize()
+        else:
+            page.bring_to_front()
+
+        print(f"[CHATGPT] Arka plan companion hazır. Beklenen hesap: {self.settings.expected_email}")
+        print("[CHATGPT] Chrome boşta minimize edilir; kullanıcı etkileşiminde tekrar öne getirilir.")
+        print("[CHATGPT] Web çıktısı otomatik kazınmaz; yanıt kopyalama kullanıcı kontrollüdür.")
         if bool(self.settings.get("inject_local_memory", self.app_config.inject_local_memory)):
             print("[CHATGPT] OS kalıcı bağlamı gönderilecek prompta otomatik eklenir.")
 
@@ -78,14 +95,9 @@ class ChatGPTManualWebProvider(Provider):
             url.startswith("https://chatgpt.com/") or url.startswith("https://chat.openai.com/")
         )
 
-    def resume_session(self, session_id: str, state: dict[str, Any]) -> None:
-        self.start()
+    def _navigate(self, target: str) -> None:
         assert self.browser is not None
         page = self.browser.require_page()
-        remote_url = state.get("remote_url")
-        target = str(remote_url) if self._is_chatgpt_url(remote_url) else str(
-            self.settings.get("start_url", "https://chatgpt.com/")
-        )
         if page.url != target:
             try:
                 page.goto(
@@ -95,19 +107,21 @@ class ChatGPTManualWebProvider(Provider):
                 )
             except PlaywrightError as exc:
                 raise ProviderError(f"Kayıtlı ChatGPT konuşması açılamadı: {exc}") from exc
-        page.bring_to_front()
+        if self.companion_settings.background_idle:
+            self.window.minimize()
+
+    def resume_session(self, session_id: str, state: dict[str, Any]) -> None:
+        self.start()
+        remote_url = state.get("remote_url")
+        target = str(remote_url) if self._is_chatgpt_url(remote_url) else str(
+            self.settings.get("start_url", "https://chatgpt.com/")
+        )
+        self._navigate(target)
         self._session_id = session_id
 
     def new_session(self, session_id: str) -> None:
         self.start()
-        assert self.browser is not None
-        page = self.browser.require_page()
-        page.goto(
-            str(self.settings.get("start_url", "https://chatgpt.com/")),
-            wait_until="domcontentloaded",
-            timeout=int(self.settings.get("page_timeout_seconds", 60)) * 1_000,
-        )
-        page.bring_to_front()
+        self._navigate(str(self.settings.get("start_url", "https://chatgpt.com/")))
         self._session_id = session_id
 
     def session_state(self) -> dict[str, Any]:
@@ -124,43 +138,83 @@ class ChatGPTManualWebProvider(Provider):
             "remote_provider": self.name,
             "mode": self.mode,
             "model": self.settings.preferred_model,
+            "background_idle": self.companion_settings.background_idle,
+            "output_capture": "user_controlled_clipboard",
         }
 
     def send(self, prompt: str, session_id: str) -> ProviderResponse:
         self.start()
         assert self.browser is not None
         page = self.browser.require_page()
-        page.bring_to_front()
 
-        old_clipboard = self._safe_paste()
+        previous_clipboard = self.clipboard.read()
+        self.clipboard.write(prompt)
+        prompt_clipboard_sequence = self.clipboard.sequence_number()
+        response = ""
+
         try:
-            pyperclip.copy(prompt)
-        except pyperclip.PyperclipException as exc:
-            raise ClipboardBridgeError(f"Prompt panoya kopyalanamadı: {exc}") from exc
+            focused = True
+            if self.companion_settings.restore_for_interaction:
+                focused = self.window.restore_and_focus()
+            page.bring_to_front()
+            if self.companion_settings.restore_for_interaction and not focused:
+                print("[UYARI] Windows pencereyi otomatik öne getiremedi; görev çubuğundan ChatGPT'yi aç.")
 
-        print("\n[CHATGPT MANUEL KÖPRÜ]")
-        print("1. ChatGPT penceresinde mesaj kutusuna Ctrl+V yap ve mesajı gönder.")
-        print("2. Yanıt tamamlanınca yalnızca yanıt metnini seçip Ctrl+C yap.")
-        input("3. Yanıt panodayken terminale dönüp Enter'a bas: ")
-        time.sleep(0.2)
+            print("\n[CHATGPT COMPANION]")
+            print("Prompt panoya kopyalandı ve ChatGPT penceresi öne getirildi.")
+            print("1. Mesaj kutusuna Ctrl+V yap ve mesajı gönder.")
+            print("2. Yanıt tamamlanınca yalnızca yanıt metnini seçip Ctrl+C yap.")
 
-        response = self._safe_paste().strip()
-        if not response or response == prompt or response == old_clipboard:
-            raise ClipboardBridgeError(
-                "Panoda yeni bir ChatGPT yanıtı bulunamadı. Yanıtı seçip Ctrl+C yaptıktan sonra tekrar dene."
+            for attempt in range(1, self.companion_settings.clipboard_retry_count + 1):
+                command = input(
+                    f"3. Yanıt panodayken terminale dönüp Enter'a bas "
+                    f"[{attempt}/{self.companion_settings.clipboard_retry_count}] "
+                    "(iptal: q): "
+                ).strip().casefold()
+                if command in {"q", "quit", "iptal", "cancel"}:
+                    raise ClipboardBridgeError("ChatGPT companion alışverişi kullanıcı tarafından iptal edildi.")
+
+                time.sleep(0.2)
+                candidate = self.clipboard.read()
+                current_sequence = self.clipboard.sequence_number()
+                clipboard_changed = (
+                    None
+                    if prompt_clipboard_sequence is None or current_sequence is None
+                    else current_sequence != prompt_clipboard_sequence
+                )
+                if self.clipboard.is_response_candidate(
+                    candidate,
+                    prompt=prompt,
+                    previous=previous_clipboard,
+                    clipboard_changed=clipboard_changed,
+                ):
+                    response = candidate.strip()
+                    break
+                print("[UYARI] Panoda yeni bir ChatGPT yanıtı bulunamadı; yanıtı tekrar seçip Ctrl+C yap.")
+
+            if not response:
+                raise ClipboardBridgeError(
+                    "Panoda geçerli ChatGPT yanıtı bulunamadı. Yanıtı seçip Ctrl+C yaptıktan sonra tekrar dene."
+                )
+
+            state = self.session_state()
+            return ProviderResponse(
+                text=response,
+                provider=self.name,
+                conversation_id=session_id,
+                metadata={
+                    "mode": self.mode,
+                    "account": self.settings.expected_email,
+                    "remote_url": state.get("remote_url", ""),
+                    "output_capture": "user_controlled_clipboard",
+                    "background_idle": self.companion_settings.background_idle,
+                },
             )
-
-        state = self.session_state()
-        return ProviderResponse(
-            text=response,
-            provider=self.name,
-            conversation_id=session_id,
-            metadata={
-                "mode": self.mode,
-                "account": self.settings.expected_email,
-                "remote_url": state.get("remote_url", ""),
-            },
-        )
+        finally:
+            if response and self.companion_settings.restore_clipboard_after_capture:
+                self.clipboard.write(previous_clipboard)
+            if self.companion_settings.minimize_after_exchange:
+                self.window.minimize()
 
     def status(self) -> dict[str, str]:
         remote_url = str(self.session_state().get("remote_url", "")) if self._started else ""
@@ -171,6 +225,8 @@ class ChatGPTManualWebProvider(Provider):
             "preferred_model": self.settings.preferred_model,
             "remote_conversation": remote_url or "henüz oluşmadı",
             "started": "evet" if self._started else "hayır",
+            "browser_state": "boşta minimize" if self.companion_settings.background_idle else "görünür",
+            "output_capture": "kullanıcı kontrollü pano",
             "account_verification": "kullanıcı kontrollü",
             "browser_profile": str(self.manual_setup.profile_dir),
             "local_context": "açık" if bool(
@@ -191,11 +247,3 @@ class ChatGPTManualWebProvider(Provider):
         self._playwright_manager = None
         self._started = False
         self._session_id = None
-
-    @staticmethod
-    def _safe_paste() -> str:
-        try:
-            value = pyperclip.paste()
-            return value if isinstance(value, str) else ""
-        except pyperclip.PyperclipException as exc:
-            raise ProviderError(f"Windows panosu okunamadı: {exc}") from exc

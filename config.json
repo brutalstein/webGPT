@@ -46,7 +46,18 @@
       "inject_local_memory": true,
       "start_url": "https://chatgpt.com/",
       "page_timeout_seconds": 60,
-      "login_timeout_seconds": 600
+      "login_timeout_seconds": 600,
+      "interaction_mode": "background_companion",
+      "background_idle": true,
+      "restore_for_interaction": true,
+      "minimize_after_exchange": true,
+      "restore_clipboard_after_capture": false,
+      "window_wait_seconds": 15,
+      "clipboard_retry_count": 3,
+      "output_capture": "user_controlled_clipboard",
+      "browser_args": [
+        "--start-minimized"
+      ]
     }
   },
   "local_tools": {

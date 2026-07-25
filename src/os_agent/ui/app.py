@@ -176,7 +176,7 @@ class TerminalApplication:
 
     def _render_header(self) -> None:
         health = self.database.quick_check()
-        subtitle = "Gemini · ChatGPT · Kalıcı SQLite çalışma alanı"
+        subtitle = "Gemini otomatik · ChatGPT arka plan companion · Kalıcı SQLite"
         status = "[green]sağlıklı[/green]" if health.casefold() == "ok" else f"[red]{health}[/red]"
         self.console.print()
         self.console.print(
@@ -226,7 +226,7 @@ class TerminalApplication:
             if name == "gemini":
                 label = "Gemini · arka plan Chrome"
             elif name == "chatgpt":
-                label = "ChatGPT · görünür kullanıcı köprüsü"
+                label = "ChatGPT · arka plan companion"
             else:
                 label = self._provider_label(name)
             choices.append(MenuChoice(label, name))
@@ -513,7 +513,7 @@ class TerminalApplication:
         providers.add_column("OS belleği")
         for name in self.registry.names():
             settings = self.config.provider(name)
-            mode = "arka plan Chrome" if name == "gemini" else "görünür kullanıcı köprüsü"
+            mode = "arka plan Chrome" if name == "gemini" else "arka plan companion"
             providers.add_row(
                 self._provider_label(name),
                 settings.expected_email,
