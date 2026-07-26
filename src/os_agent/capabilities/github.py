@@ -5,7 +5,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import time
 import tomllib
 import uuid
@@ -16,7 +15,9 @@ from urllib.parse import unquote, urlparse
 
 from ..errors import CapabilityInstallError, CapabilityValidationError
 from .adapters import AdapterRegistry, normalize_capability_name
-from .models import CapabilityInspection
+from .jobs import CapabilityJobRuntime, JobWorkspace
+from .models import CapabilityInspection, ProcessResult
+from .process import CapabilityProcessRunner
 
 _GITHUB_HOST = "github.com"
 _SAFE_PART = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -64,51 +65,85 @@ def parse_github_repository(source: str, *, ref: str | None = None) -> dict[str,
 
 
 class GitHubCapabilityInspector:
-    def __init__(self, quarantine_root: Path, settings: dict[str, Any], adapters: AdapterRegistry):
+    def __init__(
+        self,
+        quarantine_root: Path,
+        settings: dict[str, Any],
+        adapters: AdapterRegistry,
+        *,
+        runner: CapabilityProcessRunner | None = None,
+        jobs: CapabilityJobRuntime | None = None,
+    ):
         self.quarantine_root = quarantine_root
         self.settings = settings
         self.adapters = adapters
+        self.runner = runner or CapabilityProcessRunner(settings)
+        self.jobs = jobs or CapabilityJobRuntime(quarantine_root.parent, settings)
+        located_git = shutil.which("git")
+        if not located_git:
+            raise CapabilityInstallError("GitHub capability incelemesi için git executable bulunamadı.")
+        self.git_executable = str(Path(located_git).resolve())
         self.quarantine_root.mkdir(parents=True, exist_ok=True)
         self.cleanup()
 
-    def _git(self, command: list[str], *, cwd: Path | None = None, timeout: int | None = None) -> subprocess.CompletedProcess[str]:
-        env = {
-            "PATH": os.environ.get("PATH", ""),
-            "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
-            "WINDIR": os.environ.get("WINDIR", ""),
-            "TEMP": os.environ.get("TEMP", ""),
-            "TMP": os.environ.get("TMP", ""),
-            "HOME": os.environ.get("HOME", ""),
-            "USERPROFILE": os.environ.get("USERPROFILE", ""),
-            "GIT_TERMINAL_PROMPT": "0",
-            "GIT_ASKPASS": "",
-            "GIT_CONFIG_NOSYSTEM": "1",
-        }
-        actual = ["git", "-c", "credential.helper=", "-c", "core.symlinks=false", *command]
-        try:
-            return subprocess.run(
-                actual,
-                cwd=str(cwd) if cwd else None,
-                env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=timeout or max(10, int(self.settings.get("git_timeout_seconds", 120))),
-                check=False,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise CapabilityInstallError("GitHub capability kaynağı zaman aşımına uğradı.") from exc
-        except OSError as exc:
-            raise CapabilityInstallError(f"git çalıştırılamadı: {exc}") from exc
+    @staticmethod
+    def _retryable_git_failure(result: ProcessResult) -> bool:
+        text = f"{result.stdout}\n{result.stderr}".casefold()
+        markers = (
+            "could not resolve host", "connection reset", "connection timed out", "early eof",
+            "rpc failed", "http 429", "http 500", "http 502", "http 503", "http 504",
+            "tls", "ssl", "network is unreachable", "remote end hung up", "temporarily unavailable",
+        )
+        return result.timed_out or any(marker in text for marker in markers)
 
-    def _resolve_ref(self, source: dict[str, str]) -> str:
+    def _git(
+        self,
+        command: list[str],
+        *,
+        job: JobWorkspace,
+        cwd: Path | None = None,
+        timeout: int | None = None,
+        allow_network: bool = False,
+        retries: int = 0,
+        env_overrides: dict[str, str] | None = None,
+    ) -> ProcessResult:
+        actual = [
+            self.git_executable,
+            "-c", "credential.helper=",
+            "-c", "core.symlinks=false",
+            "-c", "advice.detachedHead=false",
+            *command,
+        ]
+        attempts = max(1, retries + 1)
+        last: ProcessResult | None = None
+        for attempt in range(attempts):
+            last = self.runner.run(
+                actual,
+                cwd=(cwd or job.work),
+                env_overrides=job.environment(env_overrides),
+                timeout_seconds=timeout or max(10, int(self.settings.get("git_timeout_seconds", 120))),
+                allow_network=allow_network,
+                memory_limit_mb=512,
+            )
+            if last.ok or attempt + 1 >= attempts or not self._retryable_git_failure(last):
+                return last
+            backoff = max(0.25, float(self.settings.get("git_retry_backoff_seconds", 2))) * (2 ** attempt)
+            job.update("retrying", attempt=attempt + 1, command="git " + " ".join(command), backoff_seconds=backoff)
+            time.sleep(backoff)
+        assert last is not None
+        return last
+
+    def _resolve_ref(self, source: dict[str, str], job: JobWorkspace) -> str:
         ref = source["ref"]
         if _COMMIT.fullmatch(ref.casefold()):
             return ref.casefold()
-        completed = self._git(["ls-remote", source["clone_url"], "HEAD" if ref == "HEAD" else ref], timeout=45)
+        completed = self._git(
+            ["ls-remote", source["clone_url"], "HEAD" if ref == "HEAD" else ref],
+            job=job,
+            timeout=60,
+            allow_network=True,
+            retries=max(1, int(self.settings.get("git_fetch_retries", 3)) - 1),
+        )
         if completed.returncode != 0:
             raise CapabilityInstallError(completed.stderr.strip() or f"GitHub ref çözümlenemedi: {ref}")
         entries = []
@@ -124,20 +159,68 @@ class GitHubCapabilityInspector:
         ]
         return (preferred or [sha for sha, _ in entries])[0]
 
-    def _fetch(self, source: dict[str, str], commit: str, repo_root: Path) -> None:
-        repo_root.mkdir(parents=True, exist_ok=False)
-        commands = (
-            ["init", "--quiet"],
-            ["remote", "add", "origin", source["clone_url"]],
-            ["fetch", "--quiet", "--filter=blob:none", "--depth", "1", "origin", commit],
-        )
-        for command in commands:
-            completed = self._git(command, cwd=repo_root)
-            if completed.returncode != 0:
-                raise CapabilityInstallError(completed.stderr.strip() or "GitHub repository indirilemedi.")
+    def _fetch(self, source: dict[str, str], commit: str, repo_root: Path, job: JobWorkspace) -> tuple[Path, bool]:
+        cache = self.jobs.git_cache_path(source["clone_url"])
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache_hit = False
+        with self.jobs.cache_lock(source["clone_url"]):
+            if not (cache / "HEAD").is_file():
+                temporary = cache.with_name(cache.name + f".tmp-{uuid.uuid4().hex[:8]}")
+                shutil.rmtree(temporary, ignore_errors=True)
+                initialized = self._git(["init", "--bare", str(temporary)], job=job, allow_network=False)
+                if not initialized.ok:
+                    raise CapabilityInstallError(initialized.stderr.strip() or "Git cache oluşturulamadı.")
+                os.replace(temporary, cache)
+            remote = self._git(["--git-dir", str(cache), "remote", "get-url", "origin"], job=job)
+            if remote.ok:
+                configured = self._git(
+                    ["--git-dir", str(cache), "remote", "set-url", "origin", source["clone_url"]], job=job
+                )
+            else:
+                configured = self._git(
+                    ["--git-dir", str(cache), "remote", "add", "origin", source["clone_url"]], job=job
+                )
+            if not configured.ok:
+                raise CapabilityInstallError(configured.stderr.strip() or "Git cache remote ayarlanamadı.")
 
-    def _preflight_tree(self, repo_root: Path) -> dict[str, int]:
-        completed = self._git(["ls-tree", "-r", "-l", "FETCH_HEAD"], cwd=repo_root, timeout=60)
+            present = self._git(
+                ["--git-dir", str(cache), "cat-file", "-e", f"{commit}^{{commit}}"], job=job
+            )
+            cache_hit = present.ok
+            if not cache_hit:
+                maximum_blob = max(65_536, int(self.settings.get("max_repository_file_bytes", 16_777_216))) + 1
+                fetched = self._git(
+                    [
+                        "--git-dir", str(cache), "fetch", "--progress", "--no-tags", "--depth", "1",
+                        f"--filter=blob:limit={maximum_blob}", "origin",
+                        f"+{commit}:refs/os-cache/{commit}",
+                    ],
+                    job=job,
+                    timeout=max(60, int(self.settings.get("git_fetch_timeout_seconds", 600))),
+                    allow_network=True,
+                    retries=max(0, int(self.settings.get("git_fetch_retries", 3)) - 1),
+                )
+                if not fetched.ok:
+                    detail = fetched.stderr.strip() or fetched.stdout.strip() or "GitHub repository indirilemedi."
+                    raise CapabilityInstallError(detail[-5000:])
+            self.jobs.touch_cache(cache)
+
+        repo_root.mkdir(parents=True, exist_ok=False)
+        initialized = self._git(["init", "--quiet"], job=job, cwd=repo_root, allow_network=False)
+        if not initialized.ok:
+            raise CapabilityInstallError(initialized.stderr.strip() or "Git çalışma repository'si oluşturulamadı.")
+        alternates = repo_root / ".git" / "objects" / "info" / "alternates"
+        alternates.parent.mkdir(parents=True, exist_ok=True)
+        alternates.write_text((cache / "objects").resolve().as_posix() + "\n", encoding="utf-8")
+        return cache, cache_hit
+
+    def _preflight_tree(self, cache: Path, commit: str, job: JobWorkspace) -> dict[str, int]:
+        completed = self._git(
+            ["--git-dir", str(cache), "ls-tree", "-r", "-l", commit],
+            job=job,
+            timeout=90,
+            env_overrides={"GIT_NO_LAZY_FETCH": "1"},
+        )
         if completed.returncode != 0:
             raise CapabilityInstallError(completed.stderr.strip() or "Repository ağacı okunamadı.")
         max_files = max(50, int(self.settings.get("max_repository_files", 6000)))
@@ -152,7 +235,11 @@ class GitHubCapabilityInspector:
             mode, object_type, _, size_raw, path = match.groups()
             if mode in {"120000", "160000"} or object_type != "blob":
                 raise CapabilityValidationError(f"Symlink veya submodule içeren executable repository reddedildi: {path}")
-            size = 0 if size_raw == "-" else int(size_raw)
+            if size_raw == "-":
+                raise CapabilityValidationError(
+                    f"Repository blob filtresi sınırını aşan veya eksik dosya içeriyor: {path}"
+                )
+            size = int(size_raw)
             if size > max_single:
                 raise CapabilityValidationError(f"Repository dosyası çok büyük: {path} ({size} bayt)")
             if PurePosixPath(path).suffix.casefold() in _BINARY_DENY:
@@ -165,10 +252,20 @@ class GitHubCapabilityInspector:
                 )
         return {"file_count": count, "total_bytes": total}
 
-    def _checkout(self, repo_root: Path) -> None:
-        completed = self._git(["checkout", "--quiet", "--detach", "FETCH_HEAD"], cwd=repo_root)
+    def _checkout(self, repo_root: Path, commit: str, job: JobWorkspace) -> None:
+        self._git(["remote", "remove", "origin"], job=job, cwd=repo_root)
+        completed = self._git(
+            ["checkout", "--quiet", "--detach", commit],
+            job=job,
+            cwd=repo_root,
+            env_overrides={"GIT_NO_LAZY_FETCH": "1"},
+        )
         if completed.returncode != 0:
-            raise CapabilityInstallError(completed.stderr.strip() or "Capability checkout başarısız.")
+            raise CapabilityInstallError(
+                completed.stderr.strip()
+                or "Capability checkout eksik blob nedeniyle tamamlanamadı; cache güvenli biçimde iptal edildi."
+            )
+        shutil.rmtree(repo_root / ".git", ignore_errors=True)
 
     @staticmethod
     def _read_package(repo_root: Path) -> dict[str, Any]:
@@ -238,17 +335,29 @@ class GitHubCapabilityInspector:
 
     def inspect(self, source_value: str, *, ref: str | None = None) -> CapabilityInspection:
         source = parse_github_repository(source_value, ref=ref)
-        commit = self._resolve_ref(source)
         inspection_id = uuid.uuid4().hex
         root = self.quarantine_root / inspection_id
         repo_root = root / "repo"
         try:
-            self._fetch(source, commit, repo_root)
-            tree = self._preflight_tree(repo_root)
-            self._checkout(repo_root)
-            package = self._read_package(repo_root)
-            adapter = self.adapters.detect(source, package)
-            scan = self._scan(repo_root)
+            with self.jobs.job(
+                "github-inspection",
+                {"source": source["web_url"], "ref": source["ref"], "inspection_id": inspection_id},
+            ) as job:
+                job.update("running", phase="resolve-ref")
+                commit = self._resolve_ref(source, job)
+                temporary_repo = job.work / "repo"
+                job.update("running", phase="fetch", commit=commit)
+                cache, cache_hit = self._fetch(source, commit, temporary_repo, job)
+                job.update("running", phase="tree-preflight", cache_hit=cache_hit)
+                tree = self._preflight_tree(cache, commit, job)
+                job.update("running", phase="checkout")
+                self._checkout(temporary_repo, commit, job)
+                job.update("running", phase="manifest-and-risk-scan")
+                package = self._read_package(temporary_repo)
+                adapter = self.adapters.detect(source, package)
+                scan = self._scan(temporary_repo)
+                root.mkdir(parents=True, exist_ok=False)
+                os.replace(temporary_repo, repo_root)
             name = adapter.descriptor.name if adapter else normalize_capability_name(package["name"])
             source_payload = {**source, "commit": commit}
             report = {
@@ -260,11 +369,18 @@ class GitHubCapabilityInspector:
                 "trusted_adapter": bool(adapter and adapter.descriptor.trusted),
                 "default_auto_start": bool(adapter and adapter.descriptor.default_auto_start),
                 "default_auto_query": bool(adapter and adapter.descriptor.default_auto_query),
+                "download": {
+                    "cache_hit": cache_hit,
+                    "cache_root": str(cache),
+                    "strategy": "commit-pinned bounded-blob bare-cache",
+                    "ephemeral_job": True,
+                },
                 "tree": tree,
                 "risk": {
                     "findings": scan["findings"],
                     "credential_environment_removed": True,
                     "runtime_network_default": "blocked_by_proxy_environment",
+                    "project_directory_untouched": True,
                     "full_kernel_sandbox": False,
                 },
                 "file_hashes": scan["file_hashes"],

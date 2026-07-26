@@ -1,5 +1,14 @@
 # Değişiklik Günlüğü
 
+## 0.11.0
+
+- GitHub extension inceleme ve capability kurulumları için proje dışı, geçici ve izole job çalışma alanı eklendi.
+- GitHub indirme hattı tek kullanımlık blobless checkout yerine kilitli kalıcı bare cache, bounded blob filtresi ve retry/backoff ile yeniden kuruldu.
+- Ağ, HOME, TEMP, pip ve uv cache'leri capability job'larına yönlendirildi; başarısız işler tanılama için sınırlı süre saklanıyor.
+- Python capability kurulumlarında uv tabanlı relocatable venv ve paylaşımlı dependency cache eklendi; güvenli pip fallback korundu.
+- Kurulum öncesi compileall, import doğrulaması ve CLI `--help` smoke testi eklendi.
+- Windows Job Object limiti yalnız ana prosesi değil bütün capability process ağacının toplam belleğini kapsayacak şekilde güçlendirildi.
+
 ## 0.10.3
 
 - Boş oluşturulan konuşma silme modalı gerçek, erişilebilir ve default-export edilen React bileşeniyle tamamlandı.

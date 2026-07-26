@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -34,6 +35,10 @@ def dependencies_ready() -> bool:
         import yaml  # noqa: F401
         import watchdog  # noqa: F401
         import tree_sitter_language_pack  # noqa: F401
+        uv_name = "uv.exe" if os.name == "nt" else "uv"
+        uv_near_python = Path(sys.executable).with_name(uv_name)
+        if not uv_near_python.is_file() and shutil.which("uv") is None:
+            return False
     except ImportError:
         return False
     return HASH_FILE.exists() and HASH_FILE.read_text(encoding="utf-8").strip() == file_hash(REQUIREMENTS)

@@ -50,22 +50,42 @@ class CapabilityStatusTool(Tool):
         description="Global capability'nin kurulum, otomatik çalışma ve aktif workspace çıktı durumunu döndürür.",
         input_schema=_schema(
             {"name": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": r"[a-z0-9]+(?:-[a-z0-9]+)*"}},
-            ["name"],
         ),
         risk=ToolRisk.READ,
         idempotent=True,
     )
 
     def execute(self, context: ToolContext, arguments: dict[str, Any]) -> ToolPayload:
-        payload = _manager(context).status(str(arguments["name"]))
-        item = payload["capabilities"][0]
-        workspace = item.get("workspace") or {}
-        content = (
-            f"Capability: {item['name']} {item['version']}\n"
-            f"Durum: {item['status']} · enabled={item['enabled']} · auto_start={item['auto_start']} · auto_query={item['auto_query']}\n"
-            f"Workspace: {workspace.get('status', 'yok')} · ready={workspace.get('ready', False)}\n"
-            f"Global output: {workspace.get('output_root') or 'henüz yok'}"
-        )
+        name = str(arguments.get("name", "")).strip()
+        payload = _manager(context).status(name or None)
+        if name:
+            item = payload["capabilities"][0]
+            workspace = item.get("workspace") or {}
+            content = (
+                f"Capability: {item['name']} {item['version']}\n"
+                f"Durum: {item['status']} · enabled={item['enabled']} · auto_start={item['auto_start']} · auto_query={item['auto_query']}\n"
+                f"Workspace: {workspace.get('status', 'yok')} · ready={workspace.get('ready', False)}\n"
+                f"Global output: {workspace.get('output_root') or 'henüz yok'}"
+            )
+        else:
+            jobs = payload.get("job_runtime", {})
+            active = jobs.get("active", [])
+            retained = jobs.get("retained", [])
+            lines = [
+                f"Capability job runtime: active={jobs.get('active_count', 0)} · "
+                f"failed-retained={jobs.get('retained_failed_jobs', 0)} · "
+                f"git-cache={jobs.get('git_cache_repositories', 0)}"
+            ]
+            lines.extend(
+                f"- {item.get('job_id')} · {item.get('kind')} · {item.get('phase') or item.get('status')}"
+                for item in active
+            )
+            lines.extend(
+                f"- retained {item.get('job_id')} · {item.get('status')} · {str(item.get('error', ''))[:240]}"
+                for item in retained[:5]
+                if item.get("status") == "failed"
+            )
+            content = "\n".join(lines)
         return ToolPayload(content=content, structured=payload)
 
 

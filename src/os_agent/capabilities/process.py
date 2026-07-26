@@ -62,6 +62,7 @@ class _WindowsJob:
     """Çocuk süreç ağacını timeout/close sırasında birlikte sonlandıran Job Object."""
 
     JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
+    JOB_OBJECT_LIMIT_JOB_MEMORY = 0x00000200
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
     JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
 
@@ -75,8 +76,11 @@ class _WindowsJob:
         info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
         info.BasicLimitInformation.LimitFlags = self.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
         if memory_limit_bytes > 0:
-            info.BasicLimitInformation.LimitFlags |= self.JOB_OBJECT_LIMIT_PROCESS_MEMORY
+            info.BasicLimitInformation.LimitFlags |= (
+                self.JOB_OBJECT_LIMIT_PROCESS_MEMORY | self.JOB_OBJECT_LIMIT_JOB_MEMORY
+            )
             info.ProcessMemoryLimit = memory_limit_bytes
+            info.JobMemoryLimit = memory_limit_bytes
         ok = kernel32.SetInformationJobObject(
             ctypes.c_void_p(self._handle),
             self.JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,

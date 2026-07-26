@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 from ..errors import CapabilityExecutionError, CapabilityInstallError, CapabilityValidationError
 from .adapters import AdapterRegistry, CapabilityAdapter, normalize_capability_name
 from .github import GitHubCapabilityInspector
+from .jobs import CapabilityJobRuntime, JobWorkspace
 from .models import CapabilityInspection, CapabilityRecord, ProcessResult
 from .process import CapabilityProcessRunner
 from .state import CapabilityStore
@@ -57,8 +58,11 @@ class CapabilityManager:
             path.mkdir(parents=True, exist_ok=True)
         self.adapters = AdapterRegistry()
         self.store = CapabilityStore(state_dir / "capabilities.sqlite3")
+        self.jobs = CapabilityJobRuntime(root, settings)
         self.runner = CapabilityProcessRunner(settings)
-        self.inspector = GitHubCapabilityInspector(self.quarantine_root, settings, self.adapters)
+        self.inspector = GitHubCapabilityInspector(
+            self.quarantine_root, settings, self.adapters, runner=self.runner, jobs=self.jobs
+        )
         self._activity_handler = None
         self._stop = threading.Event()
         self._wake = threading.Event()
@@ -93,6 +97,7 @@ class CapabilityManager:
             self._thread.join(timeout=max(2.0, float(self.settings.get("shutdown_timeout_seconds", 8))))
             self._thread = None
         self.store.checkpoint()
+        self.jobs.cleanup()
 
     def workspace_changed(self) -> None:
         self._wake.set()
@@ -159,10 +164,26 @@ class CapabilityManager:
             if path.is_symlink():
                 raise CapabilityInstallError(f"Capability staging alanında symlink bulundu: {path}")
 
-    def _run_install_command(self, command: list[str], *, cwd: Path) -> ProcessResult:
+    @staticmethod
+    def _uv_executable() -> Path | None:
+        name = "uv.exe" if os.name == "nt" else "uv"
+        near_python = Path(sys.executable).with_name(name)
+        if near_python.is_file():
+            return near_python.resolve()
+        located = shutil.which("uv")
+        return Path(located).resolve() if located else None
+
+    def _run_install_command(
+        self,
+        command: list[str],
+        *,
+        cwd: Path,
+        job: JobWorkspace | None = None,
+    ) -> ProcessResult:
         result = self.runner.run(
             command,
             cwd=cwd,
+            env_overrides=job.environment() if job else None,
             timeout_seconds=max(60, int(self.settings.get("install_timeout_seconds", 1200))),
             allow_network=True,
             memory_limit_mb=max(512, int(self.settings.get("install_memory_limit_mb", 2048))),
@@ -171,6 +192,100 @@ class CapabilityManager:
             detail = result.stderr.strip() or result.stdout.strip() or f"çıkış kodu {result.returncode}"
             raise CapabilityInstallError(f"Capability kurulumu başarısız: {detail[-4000:]}")
         return result
+
+    def _prepare_python_environment(
+        self,
+        venv_root: Path,
+        source_root: Path,
+        job: JobWorkspace,
+    ) -> tuple[Path, str]:
+        uv = self._uv_executable() if bool(self.settings.get("uv_enabled", True)) else None
+        uv_error = ""
+        if uv is not None:
+            created = self.runner.run(
+                [
+                    str(uv), "venv", "--python", sys.executable,
+                    "--relocatable", "--no-python-downloads", str(venv_root),
+                ],
+                cwd=job.work,
+                env_overrides=job.environment(),
+                timeout_seconds=max(30, int(self.settings.get("uv_venv_timeout_seconds", 180))),
+                allow_network=False,
+                memory_limit_mb=512,
+            )
+            if created.ok:
+                python = self._python_in_venv(venv_root)
+                installed = self.runner.run(
+                    [str(uv), "pip", "install", "--python", str(python), str(source_root)],
+                    cwd=source_root,
+                    env_overrides=job.environment(),
+                    timeout_seconds=max(60, int(self.settings.get("install_timeout_seconds", 1200))),
+                    allow_network=True,
+                    memory_limit_mb=max(512, int(self.settings.get("install_memory_limit_mb", 2048))),
+                )
+                if installed.ok:
+                    return python, "uv"
+                uv_error = installed.stderr.strip() or installed.stdout.strip()
+            else:
+                uv_error = created.stderr.strip() or created.stdout.strip()
+            shutil.rmtree(venv_root, ignore_errors=True)
+            if not bool(self.settings.get("uv_fallback_to_pip", True)):
+                raise CapabilityInstallError(f"uv capability kurulumu başarısız: {uv_error[-4000:]}")
+
+        venv.EnvBuilder(with_pip=True, clear=True, symlinks=False).create(venv_root)
+        python = self._python_in_venv(venv_root)
+        self._run_install_command(
+            [
+                str(python), "-m", "pip", "install", "--no-input", "--disable-pip-version-check",
+                "--no-warn-script-location", str(source_root),
+            ],
+            cwd=source_root,
+            job=job,
+        )
+        return python, "pip-fallback" if uv_error else "pip"
+
+    def _smoke_test(
+        self,
+        python: Path,
+        package: dict[str, Any],
+        source_root: Path,
+        job: JobWorkspace,
+        *,
+        strict: bool,
+    ) -> dict[str, Any]:
+        timeout = max(15, int(self.settings.get("smoke_test_timeout_seconds", 120)))
+        compiled = self.runner.run(
+            [sys.executable, "-m", "compileall", "-q", str(source_root)],
+            cwd=source_root,
+            env_overrides=job.environment(),
+            timeout_seconds=timeout,
+            allow_network=False,
+            memory_limit_mb=768,
+        )
+        if not compiled.ok:
+            raise CapabilityInstallError(
+                "Capability kaynak compileall smoke testi başarısız: "
+                + (compiled.stderr.strip() or compiled.stdout.strip())[-3000:]
+            )
+        module = str(package.get("module", "")).strip()
+        help_result = self.runner.run(
+            [str(python), "-m", module, "--help"],
+            cwd=source_root,
+            env_overrides=job.environment(),
+            timeout_seconds=timeout,
+            allow_network=False,
+            memory_limit_mb=768,
+        )
+        if strict and not help_result.ok:
+            raise CapabilityInstallError(
+                "Güvenilen capability CLI smoke testi başarısız: "
+                + (help_result.stderr.strip() or help_result.stdout.strip())[-3000:]
+            )
+        return {
+            "compileall": "passed",
+            "cli_help": "passed" if help_result.ok else "warning",
+            "duration_ms": compiled.duration_ms + help_result.duration_ms,
+        }
 
     def _verify_import(self, python: Path, package: dict[str, Any], cwd: Path) -> str:
         module = str(package.get("module", "")).strip()
@@ -324,17 +439,22 @@ class CapabilityManager:
                 try:
                     staged_version.mkdir(parents=True)
                     self._safe_copy_source(inspection.source_root, source_target)
-                    # venv stdlib üzerinden kurulur; capability kodu bu aşamada import edilmez.
-                    venv.EnvBuilder(with_pip=True, clear=True, symlinks=False).create(venv_root)
-                    python = self._python_in_venv(venv_root)
-                    self._run_install_command(
-                        [
-                            str(python), "-m", "pip", "install", "--no-input", "--disable-pip-version-check",
-                            "--no-warn-script-location", str(source_target),
-                        ],
-                        cwd=source_target,
+                    with self.jobs.job(
+                        "capability-install",
+                        {"name": name, "commit": commit, "inspection_id": inspection_id},
+                    ) as job:
+                        job.update("running", phase="create-environment")
+                        python, installer = self._prepare_python_environment(venv_root, source_target, job)
+                        job.update("running", phase="verify-import", installer=installer)
+                        installed_version = self._verify_import(python, inspection.package, source_target)
+                        job.update("running", phase="smoke-test", installed_version=installed_version)
+                        smoke_test = self._smoke_test(
+                            python, inspection.package, source_target, job, strict=trusted
+                        )
+                    (staged_version / "installer.json").write_text(
+                        json.dumps({"installer": installer, "smoke_test": smoke_test}, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
                     )
-                    installed_version = self._verify_import(python, inspection.package, source_target)
                     record = CapabilityRecord(
                         name=name,
                         kind="python_cli",
@@ -375,6 +495,11 @@ class CapabilityManager:
                     shutil.rmtree(staging, ignore_errors=True)
             python = self._python_in_venv(version_root / "venv")
             installed_version = self._verify_import(python, inspection.package, version_root / "source")
+            install_metadata: dict[str, Any] = {}
+            try:
+                install_metadata = json.loads((version_root / "installer.json").read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                install_metadata = {"installer": "legacy", "smoke_test": {"status": "unknown"}}
             record = CapabilityRecord(
                 name=name,
                 kind="python_cli",
@@ -399,6 +524,8 @@ class CapabilityManager:
                     "runtime_isolation": "venv+subprocess+sanitized-env+process-tree-limits",
                     "full_kernel_sandbox": False,
                     "skill_name": f"{name}-global",
+                    "installer": install_metadata.get("installer"),
+                    "smoke_test": install_metadata.get("smoke_test", {}),
                 },
             )
             current = package_root / "current.json"
@@ -476,6 +603,8 @@ class CapabilityManager:
             "registry_health": self.store.quick_check(),
             "count": len(capabilities),
             "capabilities": capabilities,
+            "job_runtime": self.jobs.status(),
+            "preferred_python_installer": "uv" if self._uv_executable() else "pip",
             "security_boundary": (
                 "İzole venv, subprocess, temizlenmiş environment, timeout ve process-tree limitleri uygulanır; "
                 "bu mekanizma kernel seviyesinde tam sandbox değildir."
