@@ -48,6 +48,7 @@ class AppConfig:
     web: dict[str, Any] = field(default_factory=dict)
     project_context: dict[str, Any] = field(default_factory=dict)
     skills: dict[str, Any] = field(default_factory=dict)
+    capabilities: dict[str, Any] = field(default_factory=dict)
 
     @property
     def data_dir(self) -> Path:
@@ -106,6 +107,7 @@ class AppConfig:
             "web": dict(self.web),
             "project_context": dict(self.project_context),
             "skills": dict(self.skills),
+            "capabilities": dict(self.capabilities),
         }
 
 
@@ -163,6 +165,7 @@ def load_config(path: Path) -> AppConfig:
         web=dict(raw.get("web", {})),
         project_context=dict(raw.get("project_context", {})),
         skills=dict(raw.get("skills", {})),
+        capabilities=dict(raw.get("capabilities", {})),
     )
     config.state_dir.mkdir(parents=True, exist_ok=True)
     config.logs_dir.mkdir(parents=True, exist_ok=True)

@@ -31,6 +31,12 @@ class GeminiToolAgent:
         trace: list[dict[str, Any]] = []
         self._emit("agent.started", {"session_id": session_id, "phase": "planning"})
         preflight_calls = self.protocol.workspace_preflight(user_prompt)
+        capability_manager = self.executor.services.get("capabilities")
+        capability_preflight = getattr(capability_manager, "preflight_calls", None)
+        if callable(capability_preflight):
+            preflight_calls.extend(capability_preflight(user_prompt, session_id))
+        # Aynı preflight aracını aynı id ile iki kez yürütme.
+        preflight_calls = list({call.call_id: call for call in preflight_calls}.values())
         preflight_results = self.executor.execute_many(preflight_calls, session_id) if preflight_calls else []
         trace.extend(
             {
@@ -77,6 +83,11 @@ class GeminiToolAgent:
                             self.protocol.skills.activated(session_id)
                             if self.protocol.skills is not None
                             else []
+                        ),
+                        "capabilities": (
+                            capability_manager.status()
+                            if capability_manager is not None
+                            else None
                         ),
                     }
                 )

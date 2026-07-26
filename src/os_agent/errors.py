@@ -60,3 +60,19 @@ class SkillValidationError(SkillError):
 
 class SkillInstallError(SkillError):
     pass
+
+
+class CapabilityError(ToolError):
+    """Global executable capability çalışma zamanının kontrollü temel hatası."""
+
+
+class CapabilityValidationError(CapabilityError):
+    pass
+
+
+class CapabilityInstallError(CapabilityError):
+    pass
+
+
+class CapabilityExecutionError(CapabilityError):
+    pass

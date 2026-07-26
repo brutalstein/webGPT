@@ -113,7 +113,15 @@
       "read_skill_resource",
       "inspect_github_skill",
       "install_inspected_skill",
-      "uninstall_skill"
+      "uninstall_skill",
+      "list_capabilities",
+      "capability_status",
+      "inspect_github_extension",
+      "install_inspected_extension",
+      "query_capability",
+      "run_capability",
+      "configure_capability",
+      "uninstall_capability"
     ],
     "allowed_executables": [
       "git",
@@ -237,5 +245,31 @@
     "git_timeout_seconds": 90,
     "inspection_ttl_seconds": 3600,
     "automatic_script_execution": false
+  },
+  "capabilities": {
+    "enabled": true,
+    "supervisor_poll_seconds": 3,
+    "shutdown_timeout_seconds": 8,
+    "inspection_ttl_seconds": 3600,
+    "git_timeout_seconds": 120,
+    "max_repository_files": 6000,
+    "max_repository_bytes": 100663296,
+    "max_repository_file_bytes": 16777216,
+    "max_hash_files": 6000,
+    "max_static_scan_bytes": 33554432,
+    "install_timeout_seconds": 1200,
+    "install_memory_limit_mb": 2048,
+    "build_timeout_seconds": 900,
+    "query_timeout_seconds": 90,
+    "process_memory_limit_mb": 1536,
+    "max_output_chars": 60000,
+    "min_refresh_interval_seconds": 20,
+    "keep_versions": 2,
+    "trusted_adapters": [
+      "graphify"
+    ],
+    "generic_auto_execution": false,
+    "runtime_network_default": "blocked_by_proxy_environment",
+    "full_kernel_sandbox": false
   }
 }

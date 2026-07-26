@@ -3,12 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ..capabilities import CapabilityManager
 from ..config import AppConfig
 from ..context import ProjectContextEngine
 from ..models import ProviderResponse
 from ..skills import SkillManager
 from .agent import GeminiToolAgent, RawSender
 from .audit import ToolAuditLog
+from .builtins.capabilities import register_capability_tools
 from .builtins.context import register_context_tools
 from .builtins.filesystem import register_filesystem_tools
 from .builtins.process import register_process_tools
@@ -47,14 +49,24 @@ class LocalToolRuntime:
             app_config.data_dir / "skill-backups",
             dict(app_config.skills),
         )
+        self.capabilities = CapabilityManager(
+            self.workspace,
+            self.project_context,
+            self.skills,
+            app_config.data_dir / "extensions",
+            app_config.state_dir,
+            dict(app_config.capabilities),
+        )
         self.services: dict[str, Any] = {
             "project_context": self.project_context,
             "skills": self.skills,
+            "capabilities": self.capabilities,
         }
 
         self.registry = ToolRegistry()
         register_filesystem_tools(self.registry)
         register_process_tools(self.registry)
+        register_capability_tools(self.registry)
         register_context_tools(self.registry)
         register_skill_tools(self.registry)
         self.policy = ToolPolicy(self.settings)
@@ -76,6 +88,7 @@ class LocalToolRuntime:
         )
         self.agent = GeminiToolAgent(self.protocol, self.executor, self.settings)
         self.project_context.start()
+        self.capabilities.start()
 
     @property
     def enabled(self) -> bool:
@@ -96,10 +109,12 @@ class LocalToolRuntime:
         self.agent.activity_handler = handler
         self.project_context.set_activity_handler(handler)
         self.skills.set_activity_handler(handler)
+        self.capabilities.set_activity_handler(handler)
 
     def workspace_changed(self) -> None:
         self.project_context.workspace_changed()
         self.skills.refresh()
+        self.capabilities.workspace_changed()
 
     def run(
         self,
@@ -113,6 +128,7 @@ class LocalToolRuntime:
         return self.agent.run(sender, prompt, session_id)
 
     def close(self) -> None:
+        self.capabilities.close()
         self.project_context.close()
 
     def status(self, *, session_id: str | None = None) -> dict[str, Any]:
@@ -123,6 +139,7 @@ class LocalToolRuntime:
             "workspace": self.workspace.describe(),
             "project_context": self.project_context.status(refresh=False),
             "skills": self.skills.status(session_id=session_id),
+            "capabilities": self.capabilities.status(),
             "tools": [
                 item.name
                 for item in self.registry.definitions()

@@ -142,6 +142,14 @@ class ToolExecutor:
             if callable(mark_dirty):
                 mark_dirty()
 
+        capability_manager = self.services.get("capabilities")
+        capability_activity = getattr(capability_manager, "record_tool_activity", None)
+        if callable(capability_activity):
+            try:
+                capability_activity(session_id, call, result)
+            except Exception:
+                pass
+
         self._executed[call.call_id] = result
         self.audit.write(
             session_id=session_id,
