@@ -26,8 +26,8 @@ class GeminiToolAgent:
 
     def run(self, sender: RawSender, user_prompt: str, session_id: str) -> ProviderResponse:
         self.executor.reset_run()
-        max_rounds = max(1, int(self.settings.get("max_agent_rounds", 8)))
-        correction_budget = max(0, int(self.settings.get("protocol_correction_retries", 1)))
+        max_rounds = max(1, int(self.settings.get("max_agent_rounds", 12)))
+        correction_budget = max(3, int(self.settings.get("protocol_correction_retries", 4)))
         trace: list[dict[str, Any]] = []
         self._emit("agent.started", {"session_id": session_id, "phase": "planning"})
         preflight_calls = self.protocol.workspace_preflight(user_prompt)
@@ -61,10 +61,39 @@ class GeminiToolAgent:
                 calls = self.protocol.parse_calls(response.text)
             except ToolProtocolError as exc:
                 if correction_budget <= 0:
-                    raise
+                    self._emit(
+                        "agent.protocol_exhausted",
+                        {"session_id": session_id, "message": str(exc)},
+                    )
+                    response = sender(
+                        "[OS ARAÇ PLANI KURTARMA]\n"
+                        "Önceki araç zarfı birkaç kez geçersizdi. Bu turda araç çağrısı üretme. "
+                        "Kullanıcıya görevin hangi kısmının tamamlandığını ve otomatik olarak "
+                        "hangi adımın yeniden deneneceğini temiz Türkçe Markdown ile açıkla.",
+                        session_id,
+                    )
+                    return ProviderResponse(
+                        text=response.text,
+                        provider=response.provider,
+                        conversation_id=response.conversation_id,
+                        metadata=dict(response.metadata) | {
+                            "tool_runtime": "recovered_without_tools",
+                            "tool_trace": trace,
+                        },
+                    )
                 correction_budget -= 1
+                self._emit(
+                    "agent.protocol_repair",
+                    {"session_id": session_id, "remaining": correction_budget, "message": str(exc)},
+                )
                 response = sender(self.protocol.correction_prompt(str(exc)), session_id)
                 continue
+
+            if getattr(self.protocol, "last_parse_repaired", False):
+                self._emit(
+                    "agent.protocol_repaired",
+                    {"session_id": session_id, "round": round_index + 1},
+                )
 
             if calls is None:
                 metadata = dict(response.metadata)

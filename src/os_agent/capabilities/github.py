@@ -114,13 +114,22 @@ class GitHubCapabilityInspector:
             "-c", "advice.detachedHead=false",
             *command,
         ]
+        clean_env = {
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES": "",
+            "GIT_OBJECT_DIRECTORY": "",
+            "GIT_COMMON_DIR": "",
+            "GIT_DIR": "",
+            "GIT_WORK_TREE": "",
+        }
+        if env_overrides:
+            clean_env.update(env_overrides)
         attempts = max(1, retries + 1)
         last: ProcessResult | None = None
         for attempt in range(attempts):
             last = self.runner.run(
                 actual,
                 cwd=(cwd or job.work),
-                env_overrides=job.environment(env_overrides),
+                env_overrides=job.environment(clean_env),
                 timeout_seconds=timeout or max(10, int(self.settings.get("git_timeout_seconds", 120))),
                 allow_network=allow_network,
                 memory_limit_mb=512,
@@ -164,6 +173,8 @@ class GitHubCapabilityInspector:
         cache.parent.mkdir(parents=True, exist_ok=True)
         cache_hit = False
         with self.jobs.cache_lock(source["clone_url"]):
+            if (cache / "HEAD").is_file() and not (cache / "objects").is_dir():
+                shutil.rmtree(cache, ignore_errors=True)
             if not (cache / "HEAD").is_file():
                 temporary = cache.with_name(cache.name + f".tmp-{uuid.uuid4().hex[:8]}")
                 shutil.rmtree(temporary, ignore_errors=True)
@@ -211,7 +222,10 @@ class GitHubCapabilityInspector:
             raise CapabilityInstallError(initialized.stderr.strip() or "Git çalışma repository'si oluşturulamadı.")
         alternates = repo_root / ".git" / "objects" / "info" / "alternates"
         alternates.parent.mkdir(parents=True, exist_ok=True)
-        alternates.write_text((cache / "objects").resolve().as_posix() + "\n", encoding="utf-8")
+        object_directory = str((cache / "objects").resolve())
+        # Git alternates satırı Windows'ta CRLF ile yazılırsa sondaki \r,
+        # object directory adının parçası kabul edilir ve "objects?" hatası oluşur.
+        alternates.write_bytes(object_directory.encode("utf-8", errors="strict") + b"\n")
         return cache, cache_hit
 
     def _preflight_tree(self, cache: Path, commit: str, job: JobWorkspace) -> dict[str, int]:

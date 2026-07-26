@@ -1,12 +1,15 @@
-import { DatabaseBackup, MemoryStick, Plus, Trash2, X } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { DatabaseBackup, MemoryStick, Plus, ShieldCheck, Terminal, Trash2, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import useDialogFocus from '../hooks/useDialogFocus';
+import { api } from '../lib/api';
 
 export default function SettingsModal({ open, memory, onClose, onAddMemory, onDeleteMemory, onBackup }) {
   const [key, setKey] = useState('');
   const [value, setValue] = useState('');
   const [providerOnly, setProviderOnly] = useState(true);
   const [pendingAction, setPendingAction] = useState('');
+  const [executionPolicy, setExecutionPolicy] = useState(null);
+  const [policyError, setPolicyError] = useState('');
   const closeRef = useRef(null);
   const dialogRef = useDialogFocus({
     open,
@@ -15,6 +18,16 @@ export default function SettingsModal({ open, memory, onClose, onAddMemory, onDe
     },
     initialFocusRef: closeRef,
   });
+
+  useEffect(() => {
+    if (!open) return undefined;
+    let cancelled = false;
+    setPolicyError('');
+    api('/api/execution-policy')
+      .then((payload) => { if (!cancelled) setExecutionPolicy(payload); })
+      .catch((error) => { if (!cancelled) setPolicyError(error.message); });
+    return () => { cancelled = true; };
+  }, [open]);
 
   if (!open) return null;
 
@@ -29,6 +42,19 @@ export default function SettingsModal({ open, memory, onClose, onAddMemory, onDe
     } finally {
       setPendingAction('');
     }
+  };
+
+  const updateExecutionPolicy = async (event) => {
+    const enabled = event.target.checked;
+    const saved = await run('execution-policy', async () => {
+      setPolicyError('');
+      const updated = await api('/api/execution-policy', {
+        method: 'PUT',
+        body: JSON.stringify({ execution_profile: enabled ? 'safe_auto' : 'ask' }),
+      });
+      setExecutionPolicy(updated);
+    });
+    if (!saved) setPolicyError('Terminal onay profili güncellenemedi.');
   };
 
   const addMemory = async (event) => {
@@ -82,6 +108,20 @@ export default function SettingsModal({ open, memory, onClose, onAddMemory, onDe
                 <Plus size={15} />{pendingAction === 'add' ? 'Kaydediliyor…' : 'Belleğe ekle'}
               </button>
             </form>
+          </section>
+          <section className="settings-card short">
+            <div className="settings-card-title"><Terminal size={17} /><strong>Terminal onay profili</strong></div>
+            <p>Test, build, lint ve salt-okunur Git komutlarını soru sormadan çalıştırır. Yazma, kurulum ve yıkıcı komutlar korunmaya devam eder.</p>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+              <input
+                type="checkbox"
+                checked={Boolean(executionPolicy?.safe_auto_enabled)}
+                disabled={Boolean(pendingAction) || !executionPolicy}
+                onChange={updateExecutionPolicy}
+              />
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ShieldCheck size={15} />Güvenli geliştirme komutlarını otomatik çalıştır</span>
+            </label>
+            {policyError && <div className="connection-warning" role="alert">{policyError}</div>}
           </section>
           <section className="settings-card short">
             <div className="settings-card-title"><DatabaseBackup size={17} /><strong>SQLite yedeği</strong></div>

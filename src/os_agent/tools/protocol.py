@@ -155,6 +155,7 @@ Araç manifestosu (JSON Schema):
         return []
 
     def parse_calls(self, text: str) -> list[ToolCall] | None:
+        self.last_parse_repaired = False
         match = _CALL_PATTERN.search(text)
         if match is None:
             return None
@@ -162,10 +163,38 @@ Araç manifestosu (JSON Schema):
         if raw.startswith("```"):
             raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
             raw = re.sub(r"\s*```$", "", raw)
+        repaired = False
         try:
             payload = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise ToolProtocolError(f"Araç çağrısı JSON olarak ayrıştırılamadı: {exc}") from exc
+        except json.JSONDecodeError:
+            def repair_windows_string(match: re.Match[str]) -> str:
+                token = match.group(0)
+                body = token[1:-1]
+                is_windows_path = bool(
+                    re.search(r"(?i)(?:^|[^A-Za-z0-9_])[a-z]:\\", body)
+                ) or body.startswith(r"\\")
+                if not is_windows_path:
+                    return token
+                body = re.sub(
+                    r"\\+",
+                    lambda slash_run: (
+                        slash_run.group(0)
+                        if len(slash_run.group(0)) % 2 == 0
+                        else slash_run.group(0) + "\\"
+                    ),
+                    body,
+                )
+                return f'"{body}"'
+
+            candidate = re.sub(r'"(?:\\.|[^"\\])*"', repair_windows_string, raw)
+            repaired = candidate != raw
+            try:
+                payload = json.loads(candidate, strict=False)
+            except json.JSONDecodeError as exc:
+                raise ToolProtocolError(
+                    f"Araç planı geçerli JSON üretmedi (satır {exc.lineno}, sütun {exc.colno})."
+                ) from exc
+        self.last_parse_repaired = repaired
         calls_raw = payload.get("calls") if isinstance(payload, dict) else None
         if not isinstance(calls_raw, list) or not calls_raw:
             raise ToolProtocolError("os_tool_calls içinde boş olmayan calls listesi olmalı.")

@@ -139,6 +139,7 @@ def create_web_app(context: WebAppContext) -> FastAPI:
             "skills": context.tools.skills.status(session_id=context.worker.current_session_id),
             "capabilities": context.tools.capabilities.status(),
             "database_health": context.database.quick_check(),
+            "execution_policy": context.tools.policy.status(),
             "pending_approvals": context.approval.snapshot(),
             "worker_busy": context.worker.busy,
         }
@@ -266,6 +267,23 @@ def create_web_app(context: WebAppContext) -> FastAPI:
     async def list_capabilities(request: Request):
         _require_auth(request, context)
         return context.tools.capabilities.status()
+
+    @app.get("/api/execution-policy")
+    async def execution_policy(request: Request):
+        _require_auth(request, context)
+        return context.tools.policy.status()
+
+    @app.put("/api/execution-policy")
+    async def update_execution_policy(request: Request):
+        _require_auth(request, context)
+        payload = await request.json()
+        profile = str(payload.get("execution_profile", "")).strip()
+        try:
+            result = context.tools.policy.set_execution_profile(profile)
+        except OSErrorBase as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        context.hub.publish("execution_policy.changed", result)
+        return result
 
     @app.get("/api/memory")
     async def list_memory(request: Request):

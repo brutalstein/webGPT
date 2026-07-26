@@ -69,7 +69,10 @@ class LocalToolRuntime:
         register_capability_tools(self.registry)
         register_context_tools(self.registry)
         register_skill_tools(self.registry)
-        self.policy = ToolPolicy(self.settings)
+        self.policy = ToolPolicy(
+            self.settings,
+            state_path=app_config.state_dir / "execution-policy.json",
+        )
         self.audit = ToolAuditLog(app_config.logs_dir / "tool-audit.jsonl")
         self.executor = ToolExecutor(
             self.registry,
