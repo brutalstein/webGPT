@@ -10,6 +10,7 @@ import {
   Puzzle,
   RotateCcw,
   Sparkles,
+  WifiOff,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -53,15 +54,29 @@ function normalizeActivity(event) {
       timestamp: event.timestamp,
     };
   }
-  if (event.type?.startsWith('skill.') || event.type?.startsWith('skills.') || event.type?.startsWith('context.')) {
-    const completed = event.type.endsWith('completed') || event.type.endsWith('activated') || event.type.endsWith('changed');
+  if (
+    event.type?.startsWith('skill.')
+    || event.type?.startsWith('skills.')
+    || event.type?.startsWith('context.')
+    || event.type?.startsWith('capability.')
+    || event.type?.startsWith('capabilities.')
+  ) {
+    const failed = event.type.endsWith('failed');
+    const completed = failed
+      || event.type.endsWith('completed')
+      || event.type.endsWith('activated')
+      || event.type.endsWith('changed');
+    const contextEvent = event.type.startsWith('context.');
+    const capabilityEvent = event.type.startsWith('capability.') || event.type.startsWith('capabilities.');
+    const capabilityName = payload.name || payload.capability?.name;
     return {
-      id: `${event.type}-${payload.inspection_id || payload.skill || payload.root || event.seq}`,
-      tool: event.type.startsWith('context.') ? 'project_context' : 'skill',
-      title: event.type.startsWith('context.') ? 'Project context' : 'Agent skill',
-      summary: payload.skill || payload.action || event.type,
+      id: `${event.type}-${payload.inspection_id || payload.skill || capabilityName || payload.root || event.seq}`,
+      tool: contextEvent ? 'project_context' : capabilityEvent ? 'capability' : 'skill',
+      title: contextEvent ? 'Project context' : capabilityEvent ? 'Global capability' : 'Agent skill',
+      summary: payload.skill || capabilityName || payload.action || payload.error || event.type,
       arguments: payload,
-      status: completed ? 'completed' : 'started',
+      ok: failed ? false : undefined,
+      status: failed ? 'failed' : completed ? 'completed' : 'started',
       timestamp: event.timestamp,
     };
   }
@@ -98,6 +113,10 @@ export default function App() {
   const [draftResponse, setDraftResponse] = useState('');
   const [phase, setPhase] = useState('idle');
   const [busy, setBusy] = useState(false);
+  const [cancelPending, setCancelPending] = useState(false);
+  const [sessionTransition, setSessionTransition] = useState(false);
+  const [workspaceSelecting, setWorkspaceSelecting] = useState(false);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
   const [activities, setActivities] = useState([]);
   const [approvals, setApprovals] = useState([]);
   const [approvalResolving, setApprovalResolving] = useState(false);
@@ -114,6 +133,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [memory, setMemory] = useState([]);
   const [skills, setSkills] = useState({ skills: [] });
+  const [capabilities, setCapabilities] = useState({ capabilities: [] });
   const [projectContext, setProjectContext] = useState(null);
   const [intelligenceLoading, setIntelligenceLoading] = useState(false);
   const [error, setError] = useState('');
@@ -127,6 +147,8 @@ export default function App() {
   const socketReadyOnceRef = useRef(false);
   const treeRequestRef = useRef(0);
   const fileRequestRef = useRef(0);
+  const sessionRequestRef = useRef(0);
+  const intelligenceRequestRef = useRef(0);
 
   const activeMessages = useMemo(
     () => messages.filter((item) => item.role === 'user' || item.role === 'assistant'),
@@ -159,6 +181,20 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [notice]);
 
+  useEffect(() => {
+    if (approvals.length > 0) setSettingsOpen(false);
+  }, [approvals.length]);
+
+  useEffect(() => {
+    const onUnhandledRejection = (event) => {
+      const message = event.reason?.message || String(event.reason || 'Bilinmeyen istemci hatası');
+      showError(`Arayüz işlemi tamamlanamadı: ${message}`);
+      event.preventDefault();
+    };
+    window.addEventListener('unhandledrejection', onUnhandledRejection);
+    return () => window.removeEventListener('unhandledrejection', onUnhandledRejection);
+  }, [showError]);
+
   const refreshTree = useCallback(async () => {
     const requestId = ++treeRequestRef.current;
     setTreeLoading(true);
@@ -176,24 +212,35 @@ export default function App() {
   }, [showError]);
 
   const refreshSessions = useCallback(async (query = '') => {
+    const requestId = ++sessionRequestRef.current;
     const suffix = query ? `?search=${encodeURIComponent(query)}` : '';
-    const data = await api(`/api/sessions${suffix}`);
-    setSessions(data);
+    setSessionsLoading(true);
+    try {
+      const data = await api(`/api/sessions${suffix}`);
+      if (requestId === sessionRequestRef.current) setSessions(data);
+    } finally {
+      if (requestId === sessionRequestRef.current) setSessionsLoading(false);
+    }
   }, []);
 
   const refreshIntelligence = useCallback(async ({ refreshIndex = false } = {}) => {
+    const requestId = ++intelligenceRequestRef.current;
     setIntelligenceLoading(true);
     try {
-      const [skillData, contextData] = await Promise.all([
+      const contextPath = `/api/project-context${refreshIndex ? '?refresh=true' : ''}`;
+      const [skillData, contextData, capabilityData] = await Promise.all([
         api('/api/skills'),
-        api(`/api/project-context${refreshIndex ? '?refresh=true' : ''}`),
+        api(contextPath, { timeoutMs: refreshIndex ? 180_000 : 45_000 }),
+        api('/api/capabilities'),
       ]);
+      if (requestId !== intelligenceRequestRef.current) return;
       setSkills(skillData || { skills: [] });
       setProjectContext(contextData || null);
+      setCapabilities(capabilityData || { capabilities: [] });
     } catch (err) {
-      showError(err.message);
+      if (requestId === intelligenceRequestRef.current) showError(err.message);
     } finally {
-      setIntelligenceLoading(false);
+      if (requestId === intelligenceRequestRef.current) setIntelligenceLoading(false);
     }
   }, [showError]);
 
@@ -232,6 +279,7 @@ export default function App() {
         setWorkspace(data.workspace);
         setMemory(data.memory || []);
         setSkills(data.skills || { skills: [] });
+        setCapabilities(data.capabilities || { capabilities: [] });
         setProjectContext(data.project_context || null);
         setApprovals(data.pending_approvals || []);
         setBusy(Boolean(data.worker_busy));
@@ -271,9 +319,14 @@ export default function App() {
           setDraftResponse(snapshot);
         }
       } else if (event.type === 'generation.completed' || event.type === 'generation.cancelled') {
+        setCancelPending(false);
         setPhase('idle');
+      } else if (event.type === 'chat.cancel_requested') {
+        setCancelPending(true);
+        setPhase('cancelling');
       } else if (event.type === 'chat.completed') {
         setBusy(false);
+        setCancelPending(false);
         setPhase('idle');
         setDraftResponse('');
         applySession(payload.session);
@@ -281,11 +334,13 @@ export default function App() {
         refreshTree();
       } else if (event.type === 'chat.failed') {
         setBusy(false);
+        setCancelPending(false);
         setPhase('idle');
         setDraftResponse('');
         showError(payload.error || 'Gemini isteği başarısız.');
         syncCurrentSession();
       } else if (event.type === 'approval.required') {
+        setSettingsOpen(false);
         setApprovals((items) => [...items.filter((item) => item.approval_id !== payload.approval_id), payload]);
       } else if (['approval.resolved', 'approval.expired', 'approval.cancelled'].includes(event.type)) {
         setApprovals((items) => items.filter((item) => item.approval_id !== payload.approval_id));
@@ -294,7 +349,11 @@ export default function App() {
         setSelectedFile(null);
         refreshTree();
         refreshIntelligence().catch(() => {});
-      } else if (['skills.changed', 'skill.activated', 'context.index.completed'].includes(event.type)) {
+      } else if (
+        ['skills.changed', 'skill.activated', 'context.index.completed'].includes(event.type)
+        || event.type.startsWith('capability.')
+        || event.type.startsWith('capabilities.')
+      ) {
         refreshIntelligence().catch(() => {});
       } else if (event.type === 'memory.changed') {
         setMemory(payload.entries || []);
@@ -317,6 +376,7 @@ export default function App() {
       const payload = event.payload || {};
       setApprovals(payload.pending_approvals || []);
       setBusy(Boolean(payload.busy));
+      if (!payload.busy) setCancelPending(false);
       if (payload.busy) setPhase((current) => (current === 'idle' ? 'thinking' : current));
 
       const history = payload.history || [];
@@ -390,34 +450,51 @@ export default function App() {
   };
 
   const newSession = async () => {
-    if (busy) return;
+    if (busy || sessionTransition) return;
+    if (!connected) {
+      showError('Yeni konuşma açmak için yerel bağlantının hazır olmasını bekle.');
+      return;
+    }
     setError('');
+    setSessionTransition(true);
     try {
       await createSession();
       setSidebarOpen(false);
       window.requestAnimationFrame(() => scrollToBottom('auto'));
     } catch (err) {
       showError(err.message);
+    } finally {
+      setSessionTransition(false);
     }
   };
 
   const openSession = async (sessionId) => {
-    if (busy || !connected || sessionId === sessionIdRef.current) {
+    if (sessionId === sessionIdRef.current) {
       setSidebarOpen(false);
       return;
     }
+    if (busy || sessionTransition) return;
+    if (!connected) {
+      showError('Konuşma açmak için WebSocket bağlantısının kurulmasını bekle.');
+      return;
+    }
     setError('');
+    setSessionTransition(true);
     try {
       const record = await socketRef.current.send('session.open', { session_id: sessionId });
       applySession(record);
       setSidebarOpen(false);
     } catch (err) {
       showError(err.message);
+    } finally {
+      setSessionTransition(false);
     }
   };
 
   const sendPrompt = async (prompt) => {
-    if (busy || !connected || !workspaceRoot) return;
+    if (busy) throw new Error('Gemini zaten bir istek üzerinde çalışıyor.');
+    if (!connected) throw new Error('Yerel bağlantı hazır değil. Yeniden bağlanmayı bekle.');
+    if (!workspaceRoot) throw new Error('Mesaj göndermeden önce bir çalışma alanı seç.');
     setError('');
     const optimisticId = crypto.randomUUID();
     try {
@@ -439,14 +516,16 @@ export default function App() {
       setMessages((items) => items.filter((item) => item.client_id !== optimisticId));
       showError(err.message);
       syncCurrentSession();
+      throw err;
     }
   };
 
   const pickWorkspace = async () => {
-    if (busy) return;
+    if (busy || workspaceSelecting) return;
     setError('');
+    setWorkspaceSelecting(true);
     try {
-      let data = await api('/api/workspace/pick', { method: 'POST', body: '{}' });
+      let data = await api('/api/workspace/pick', { method: 'POST', body: '{}', timeoutMs: 0 });
       if (!data) {
         const path = window.prompt('Çalışma klasörünün tam yolunu yaz:');
         if (!path?.trim()) return;
@@ -463,7 +542,32 @@ export default function App() {
       showNotice('Çalışma alanı ve proje bağlamı güncellendi.');
     } catch (err) {
       showError(err.message);
+    } finally {
+      setWorkspaceSelecting(false);
     }
+  };
+
+  const cancelGeneration = async () => {
+    if (!busy || cancelPending) return;
+    if (!connected || !socketRef.current) {
+      showError('İptal isteği için yerel bağlantı hazır değil.');
+      return;
+    }
+    setCancelPending(true);
+    try {
+      const result = await socketRef.current.send('chat.cancel');
+      if (!result?.cancel_requested) {
+        setCancelPending(false);
+        showError('Gemini sağlayıcısı bu aşamada iptal isteğini kabul etmedi.');
+      }
+    } catch (err) {
+      setCancelPending(false);
+      showError(err.message);
+    }
+  };
+
+  const reconnectSocket = () => {
+    socketRef.current?.reconnect();
   };
 
   const openFile = async (path) => {
@@ -511,11 +615,20 @@ export default function App() {
         currentSessionId={session?.session_id}
         search={search}
         busy={busy}
+        connected={connected}
+        sessionsLoading={sessionsLoading}
+        sessionTransition={sessionTransition}
+        workspaceSelecting={workspaceSelecting}
+        settingsDisabled={approvals.length > 0}
         onSearch={setSearch}
         onNewSession={newSession}
         onOpenSession={openSession}
         onPickWorkspace={pickWorkspace}
-        onOpenSettings={() => { setSettingsOpen(true); setSidebarOpen(false); }}
+        onOpenSettings={() => {
+          if (approvals.length > 0) return;
+          setSettingsOpen(true);
+          setSidebarOpen(false);
+        }}
         onClose={() => setSidebarOpen(false)}
       />
 
@@ -534,9 +647,22 @@ export default function App() {
             </div>
           </div>
           <div className="topbar-actions">
-            <span className={`status-pill ${socketStatus}`} role="status" aria-live="polite">
-              <span />{statusLabels[socketStatus] || socketStatus}
-            </span>
+            {connected ? (
+              <span className={`status-pill ${socketStatus}`} role="status" aria-live="polite">
+                <span />{statusLabels[socketStatus] || socketStatus}
+              </span>
+            ) : (
+              <button
+                type="button"
+                className={`status-pill status-action ${socketStatus}`}
+                onClick={reconnectSocket}
+                disabled={socketStatus !== 'disconnected'}
+                title={socketStatus === 'disconnected' ? 'Yeniden bağlan' : statusLabels[socketStatus]}
+                aria-label={socketStatus === 'disconnected' ? 'Yerel WebSocket bağlantısını yeniden kur' : statusLabels[socketStatus]}
+              >
+                <WifiOff size={12} />{statusLabels[socketStatus] || socketStatus}
+              </button>
+            )}
             <button type="button" className="icon-button" onClick={() => setInspectorOpen((value) => !value)} title="Inspector panelini aç/kapat" aria-label="Inspector panelini aç veya kapat">
               {inspectorOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
             </button>
@@ -569,7 +695,14 @@ export default function App() {
                     'README dosyasını güncel proje yapısına göre düzenle',
                     'Git durumunu kontrol et ve değişiklikleri özetle',
                   ].map((item) => (
-                    <button type="button" key={item} disabled={suggestionDisabled} onClick={() => sendPrompt(item)}>{item}</button>
+                    <button
+                      type="button"
+                      key={item}
+                      disabled={suggestionDisabled}
+                      onClick={() => { sendPrompt(item).catch(() => {}); }}
+                    >
+                      {item}
+                    </button>
                   ))}
                 </div>
               </div>
@@ -603,10 +736,12 @@ export default function App() {
         <footer id="composer" className="composer-area">
           <Composer
             disabled={!workspaceRoot || !connected}
+            connected={connected}
             busy={busy}
+            cancelling={cancelPending}
             focusKey={session?.session_id || workspaceRoot}
             onSend={sendPrompt}
-            onCancel={() => socketRef.current?.send('chat.cancel').catch((err) => showError(err.message))}
+            onCancel={cancelGeneration}
           />
           <div className="composer-footer">Gemini yanıtları ve araç işlemleri doğrulanmalıdır. Yazma ve komutlar senden onay ister.</div>
         </footer>
@@ -614,11 +749,11 @@ export default function App() {
 
       {inspectorOpen && (
         <aside className="inspector" aria-label="Agent denetçisi">
-          <div className="inspector-tabs">
-            <button type="button" className={inspectorTab === 'activity' ? 'active' : ''} onClick={() => setInspectorTab('activity')}><Activity size={15} />Activity</button>
-            <button type="button" className={inspectorTab === 'files' ? 'active' : ''} onClick={() => setInspectorTab('files')}><Files size={15} />Files</button>
-            <button type="button" className={inspectorTab === 'skills' ? 'active' : ''} onClick={() => setInspectorTab('skills')}><Puzzle size={15} />Skills</button>
-            <button type="button" onClick={() => setActivities([])} title="Aktivite geçmişini temizle" aria-label="Aktivite geçmişini temizle"><RotateCcw size={15} /></button>
+          <div className="inspector-tabs" role="tablist" aria-label="Agent denetçisi bölümleri">
+            <button type="button" role="tab" aria-selected={inspectorTab === 'activity'} className={inspectorTab === 'activity' ? 'active' : ''} onClick={() => setInspectorTab('activity')}><Activity size={15} />Activity</button>
+            <button type="button" role="tab" aria-selected={inspectorTab === 'files'} className={inspectorTab === 'files' ? 'active' : ''} onClick={() => setInspectorTab('files')}><Files size={15} />Files</button>
+            <button type="button" role="tab" aria-selected={inspectorTab === 'skills'} className={inspectorTab === 'skills' ? 'active' : ''} onClick={() => setInspectorTab('skills')}><Puzzle size={15} />Skills</button>
+            <button type="button" className="inspector-clear" disabled={inspectorTab !== 'activity' || activities.length === 0} onClick={() => setActivities([])} title="Aktivite geçmişini temizle" aria-label="Aktivite geçmişini temizle"><RotateCcw size={15} /></button>
             <button type="button" className="inspector-close" onClick={() => setInspectorOpen(false)} title="Inspector panelini kapat" aria-label="Inspector panelini kapat"><PanelRightClose size={15} /></button>
           </div>
           {inspectorTab === 'activity' ? (
@@ -635,6 +770,7 @@ export default function App() {
           ) : (
             <SkillsPanel
               skills={skills}
+              capabilities={capabilities}
               projectContext={projectContext}
               loading={intelligenceLoading}
               onRefresh={() => refreshIntelligence({ refreshIndex: true })}
@@ -649,6 +785,7 @@ export default function App() {
         approval={approvals[0]}
         pendingCount={approvals.length}
         resolving={approvalResolving}
+        connected={connected}
         onResolve={resolveApproval}
       />
       <SettingsModal

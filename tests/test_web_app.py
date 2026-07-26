@@ -77,8 +77,10 @@ class WebAppSmokeTests(unittest.TestCase):
                     self.assertEqual(payload["app"]["provider"], "gemini")
                     self.assertIn("skills", payload)
                     self.assertIn("project_context", payload)
+                    self.assertIn("capabilities", payload)
                     self.assertEqual(client.get("/api/skills").status_code, 200)
                     self.assertEqual(client.get("/api/project-context").status_code, 200)
+                    self.assertEqual(client.get("/api/capabilities").status_code, 200)
                     self.assertEqual(client.get(f"/auth/{security.auth_token}").status_code, 404)
             finally:
                 if worker is not None:

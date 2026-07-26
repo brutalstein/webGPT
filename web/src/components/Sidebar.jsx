@@ -27,6 +27,11 @@ export default function Sidebar({
   currentSessionId,
   search,
   busy,
+  connected,
+  sessionsLoading,
+  sessionTransition,
+  workspaceSelecting,
+  settingsDisabled,
   onSearch,
   onNewSession,
   onOpenSession,
@@ -35,6 +40,7 @@ export default function Sidebar({
   onClose,
 }) {
   const root = workspace?.workspace?.root || workspace?.root || 'Çalışma alanı seçilmedi';
+  const sessionActionsBlocked = busy || sessionTransition || !connected;
   return (
     <aside className="sidebar" aria-label="Konuşma ve çalışma alanı menüsü">
       <div className="brand-row">
@@ -48,18 +54,32 @@ export default function Sidebar({
         </button>
       </div>
 
-      <button type="button" className="workspace-card" onClick={onPickWorkspace} title={root} disabled={busy}>
+      <button
+        type="button"
+        className="workspace-card"
+        onClick={onPickWorkspace}
+        title={workspaceSelecting ? 'Klasör seçici açık' : root}
+        disabled={busy || workspaceSelecting}
+        aria-busy={workspaceSelecting || undefined}
+      >
         <div className="workspace-icon"><FolderOpen size={17} /></div>
         <div className="workspace-copy">
           <span>Çalışma alanı</span>
-          <strong>{root.split(/[\\/]/).filter(Boolean).at(-1) || root}</strong>
+          <strong>{workspaceSelecting ? 'Seçiliyor…' : (root.split(/[\\/]/).filter(Boolean).at(-1) || root)}</strong>
         </div>
         <ChevronRight size={16} />
       </button>
 
-      <button type="button" className="primary-button" onClick={onNewSession} disabled={busy}>
+      <button
+        type="button"
+        className="primary-button"
+        onClick={onNewSession}
+        disabled={sessionActionsBlocked}
+        title={!connected ? 'Yerel bağlantı bekleniyor' : undefined}
+        aria-busy={sessionTransition || undefined}
+      >
         <MessageSquarePlus size={17} />
-        Yeni konuşma
+        {sessionTransition ? 'Oturum açılıyor…' : 'Yeni konuşma'}
       </button>
 
       <div className="sidebar-section-title">
@@ -71,7 +91,7 @@ export default function Sidebar({
         <input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Konuşmalarda ara" aria-label="Konuşmalarda ara" />
       </label>
 
-      <div className="session-list" role="list">
+      <div className="session-list" role="list" aria-busy={sessionsLoading || undefined}>
         {sessions.length === 0 && <div className="empty-note">Henüz Gemini konuşması yok.</div>}
         {sessions.map((item) => (
           <button
@@ -79,8 +99,8 @@ export default function Sidebar({
             key={item.session_id}
             className={`session-item ${item.session_id === currentSessionId ? 'active' : ''}`}
             onClick={() => onOpenSession(item.session_id)}
-            disabled={busy && item.session_id !== currentSessionId}
-            aria-current={item.session_id === currentSessionId ? 'true' : undefined}
+            disabled={sessionActionsBlocked || item.session_id === currentSessionId}
+            aria-current={item.session_id === currentSessionId ? 'page' : undefined}
             title={item.title || 'Yeni oturum'}
           >
             <span className="session-title">{item.title || 'Yeni oturum'}</span>
@@ -89,7 +109,7 @@ export default function Sidebar({
         ))}
       </div>
 
-      <button type="button" className="sidebar-settings" onClick={onOpenSettings}>
+      <button type="button" className="sidebar-settings" onClick={onOpenSettings} disabled={settingsDisabled} title={settingsDisabled ? 'Önce açık araç onayını tamamla' : undefined}>
         <Settings2 size={16} />
         Ayarlar ve bellek
       </button>

@@ -137,6 +137,7 @@ def create_web_app(context: WebAppContext) -> FastAPI:
             "tools": context.tools.status().get("tools", []),
             "project_context": context.tools.project_context.status(refresh=False),
             "skills": context.tools.skills.status(session_id=context.worker.current_session_id),
+            "capabilities": context.tools.capabilities.status(),
             "database_health": context.database.quick_check(),
             "pending_approvals": context.approval.snapshot(),
             "worker_busy": context.worker.busy,
@@ -240,6 +241,11 @@ def create_web_app(context: WebAppContext) -> FastAPI:
         skills = await asyncio.to_thread(context.tools.skills.refresh)
         context.hub.publish("skills.changed", {"action": "refreshed", "skills": skills})
         return context.tools.skills.status(session_id=context.worker.current_session_id)
+
+    @app.get("/api/capabilities")
+    async def list_capabilities(request: Request):
+        _require_auth(request, context)
+        return context.tools.capabilities.status()
 
     @app.get("/api/memory")
     async def list_memory(request: Request):

@@ -1,4 +1,4 @@
-import { BrainCircuit, CheckCircle2, GitBranch, Puzzle, RefreshCw, ShieldAlert } from 'lucide-react';
+import { BrainCircuit, CheckCircle2, GitBranch, Puzzle, RefreshCw, ShieldAlert, Workflow } from 'lucide-react';
 
 function ContextCard({ context }) {
   const languages = context?.languages || [];
@@ -32,6 +32,28 @@ function ContextCard({ context }) {
   );
 }
 
+function CapabilityCard({ capability }) {
+  const workspace = capability.workspace || {};
+  const state = workspace.ready ? 'hazır' : workspace.status || capability.status || 'bekliyor';
+  return (
+    <article className={`skill-card capability-card ${workspace.ready ? 'active' : ''}`}>
+      <div className="skill-card-head">
+        <span className="skill-icon"><Workflow size={15} /></span>
+        <div><strong>{capability.name}</strong><span>{capability.version || 'sürüm bilinmiyor'} · {state}</span></div>
+        {workspace.ready && <CheckCircle2 size={15} className="skill-active" />}
+      </div>
+      <p>{capability.metadata?.description || 'Global, izole çalıştırılabilir capability.'}</p>
+      <div className="skill-meta">
+        <span>{capability.enabled ? 'etkin' : 'kapalı'}</span>
+        <span>{capability.auto_start ? 'auto-start' : 'manuel başlatma'}</span>
+        <span>{capability.auto_query ? 'auto-query' : 'manuel sorgu'}</span>
+        <span>{capability.trusted_adapter ? 'güvenilen adapter' : 'generic'}</span>
+      </div>
+      {workspace.last_error && <div className="risk-note"><ShieldAlert size={13} />{workspace.last_error}</div>}
+    </article>
+  );
+}
+
 function SkillCard({ skill }) {
   const missingLicense = !skill.license && skill.license_info?.status !== 'declared' && skill.license_info?.status !== 'file_present';
   const findings = skill.risk?.findings || [];
@@ -54,8 +76,9 @@ function SkillCard({ skill }) {
   );
 }
 
-export default function SkillsPanel({ skills, projectContext, loading, onRefresh }) {
+export default function SkillsPanel({ skills, capabilities, projectContext, loading, onRefresh }) {
   const catalog = skills?.skills || [];
+  const capabilityCatalog = capabilities?.capabilities || [];
   return (
     <section className="inspector-section intelligence-section">
       <div className="inspector-heading">
@@ -66,6 +89,15 @@ export default function SkillsPanel({ skills, projectContext, loading, onRefresh
       </div>
       <div className="intelligence-scroll">
         <ContextCard context={projectContext} />
+        <section className="intelligence-card">
+          <div className="intelligence-title"><Workflow size={16} /><strong>Global capabilities</strong><span>{capabilityCatalog.length}</span></div>
+          <p className="intelligence-muted">Çalıştırılabilir paketler global ve izole ortamlarda tutulur. Hazırlık, hata ve otomatik çalışma durumu burada canlı görünür.</p>
+          <div className="skill-list">
+            {capabilityCatalog.length === 0
+              ? <div className="empty-note">Henüz global capability kurulmadı.</div>
+              : capabilityCatalog.map((capability) => <CapabilityCard key={capability.name} capability={capability} />)}
+          </div>
+        </section>
         <section className="intelligence-card">
           <div className="intelligence-title"><Puzzle size={16} /><strong>Installed skills</strong><span>{catalog.length}</span></div>
           <p className="intelligence-muted">Gemini yalnızca görevle eşleşen skill'i progressive disclosure ile etkinleştirir. İndirilen scriptler otomatik çalıştırılmaz.</p>

@@ -2,12 +2,12 @@ import { AlertTriangle, Check, ShieldCheck, X } from 'lucide-react';
 import { useRef } from 'react';
 import useDialogFocus from '../hooks/useDialogFocus';
 
-export default function ApprovalModal({ approval, pendingCount = 0, resolving = false, onResolve }) {
+export default function ApprovalModal({ approval, pendingCount = 0, resolving = false, connected = true, onResolve }) {
   const rejectRef = useRef(null);
   const dialogRef = useDialogFocus({
     open: Boolean(approval),
     onEscape: () => {
-      if (approval && !resolving) onResolve(false, false);
+      if (approval && connected && !resolving) onResolve(false, false);
     },
     initialFocusRef: rejectRef,
   });
@@ -34,15 +34,16 @@ export default function ApprovalModal({ approval, pendingCount = 0, resolving = 
             <span>Risk</span><strong>{approval.risk}</strong>
           </div>
           <pre>{JSON.stringify(approval.arguments || {}, null, 2)}</pre>
+          {!connected && <div className="connection-warning">Bağlantı yeniden kurulana kadar onay düğmeleri güvenli biçimde devre dışı.</div>}
         </div>
         <div className="approval-actions">
-          <button ref={rejectRef} type="button" className="ghost-button danger" disabled={resolving} onClick={() => onResolve(false, false)}>
+          <button ref={rejectRef} type="button" className="ghost-button danger" disabled={resolving || !connected} onClick={() => onResolve(false, false)}>
             <X size={16} />Reddet
           </button>
-          <button type="button" className="ghost-button" disabled={resolving} onClick={() => onResolve(true, true)}>
+          <button type="button" className="ghost-button" disabled={resolving || !connected} onClick={() => onResolve(true, true)}>
             <ShieldCheck size={16} />Bu oturumda izin ver
           </button>
-          <button type="button" className="primary-button compact" disabled={resolving} onClick={() => onResolve(true, false)}>
+          <button type="button" className="primary-button compact" disabled={resolving || !connected} onClick={() => onResolve(true, false)}>
             <Check size={16} />{resolving ? 'İşleniyor…' : 'Bir kez onayla'}
           </button>
         </div>

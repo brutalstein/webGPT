@@ -76,6 +76,45 @@ class WebUiRegressionTests(unittest.TestCase):
         self.assertIn("temiz Markdown", protocol)
         self.assertNotIn("rehype-raw", component)
 
+    def test_interactive_controls_have_explicit_async_and_connection_guards(self) -> None:
+        app = self.read("web/src/App.jsx")
+        composer = self.read("web/src/components/Composer.jsx")
+        sidebar = self.read("web/src/components/Sidebar.jsx")
+        approval = self.read("web/src/components/ApprovalModal.jsx")
+        api_source = self.read("web/src/lib/api.js")
+        self.assertIn("sessionTransition", app)
+        self.assertIn("workspaceSelecting", app)
+        self.assertIn("cancelPending", app)
+        self.assertIn("setValue((current) => current.trim() ? current : prompt)", composer)
+        self.assertIn("sessionActionsBlocked", sidebar)
+        self.assertIn("resolving || !connected", approval)
+        self.assertIn("DEFAULT_REQUEST_TIMEOUT_MS", api_source)
+
+    def test_empty_files_can_be_copied_and_copy_failures_are_visible(self) -> None:
+        workspace = self.read("web/src/components/WorkspacePanel.jsx")
+        markdown = self.read("web/src/components/MarkdownMessage.jsx")
+        self.assertIn("typeof selectedFile.content !== 'string'", workspace)
+        self.assertNotIn("if (!selectedFile?.content) return", workspace)
+        self.assertIn("copyState === 'error'", workspace)
+        self.assertIn("copyState === 'error'", markdown)
+
+    def test_global_capabilities_are_visible_in_web_intelligence_panel(self) -> None:
+        app = self.read("web/src/App.jsx")
+        panel = self.read("web/src/components/SkillsPanel.jsx")
+        backend = self.read("src/os_agent/web/app.py")
+        self.assertIn("/api/capabilities", app)
+        self.assertIn("Global capabilities", panel)
+        self.assertIn('"/api/capabilities"', backend)
+
+    def test_render_errors_and_stacked_modals_have_safe_recovery(self) -> None:
+        main = self.read("web/src/main.jsx")
+        boundary = self.read("web/src/components/ErrorBoundary.jsx")
+        dialog = self.read("web/src/hooks/useDialogFocus.js")
+        self.assertIn("ErrorBoundary", main)
+        self.assertIn("window.location.reload()", boundary)
+        self.assertIn("modalStack", dialog)
+        self.assertIn("bodyLockCount", dialog)
+
     def test_project_brain_exposes_continuous_structural_health(self) -> None:
         runtime = self.read("src/os_agent/tools/runtime.py")
         engine = self.read("src/os_agent/context/engine.py")

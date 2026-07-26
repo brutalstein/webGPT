@@ -1,8 +1,9 @@
 import { ArrowUp, Paperclip, Square } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-export default function Composer({ disabled, busy, onSend, onCancel, focusKey }) {
+export default function Composer({ disabled, connected, busy, cancelling, onSend, onCancel, focusKey }) {
   const [value, setValue] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const textarea = useRef(null);
 
   useEffect(() => {
@@ -20,16 +21,23 @@ export default function Composer({ disabled, busy, onSend, onCancel, focusKey })
     window.requestAnimationFrame(() => textarea.current?.focus({ preventScroll: true }));
   }, [disabled, focusKey]);
 
-  const submit = () => {
+  const submit = async () => {
     const prompt = value.trim();
-    if (!prompt || disabled || busy) return;
+    if (!prompt || disabled || busy || submitting) return;
     setValue('');
-    onSend(prompt);
-    window.requestAnimationFrame(() => textarea.current?.focus({ preventScroll: true }));
+    setSubmitting(true);
+    try {
+      await onSend(prompt);
+    } catch {
+      setValue((current) => current.trim() ? current : prompt);
+    } finally {
+      setSubmitting(false);
+      window.requestAnimationFrame(() => textarea.current?.focus({ preventScroll: true }));
+    }
   };
 
   return (
-    <div className="composer-shell">
+    <div className="composer-shell" aria-busy={busy || submitting || undefined}>
       <textarea
         ref={textarea}
         rows={1}
@@ -41,18 +49,25 @@ export default function Composer({ disabled, busy, onSend, onCancel, focusKey })
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
             event.preventDefault();
-            submit();
+            void submit();
           }
         }}
       />
       <div className="composer-toolbar">
         <div className="composer-hint"><Paperclip size={14} />Enter gönderir · Shift+Enter yeni satır</div>
         {busy ? (
-          <button type="button" className="send-button stop" onClick={onCancel} title="Yanıtı durdur" aria-label="Yanıtı durdur">
+          <button
+            type="button"
+            className="send-button stop"
+            onClick={onCancel}
+            disabled={!connected || cancelling}
+            title={cancelling ? 'İptal isteği iletiliyor' : 'Yanıtı durdur'}
+            aria-label={cancelling ? 'Yanıt durduruluyor' : 'Yanıtı durdur'}
+          >
             <Square size={15} fill="currentColor" />
           </button>
         ) : (
-          <button type="button" className="send-button" onClick={submit} disabled={disabled || !value.trim()} title="Gönder" aria-label="Mesajı gönder">
+          <button type="button" className="send-button" onClick={() => { void submit(); }} disabled={disabled || submitting || !value.trim()} title="Gönder" aria-label="Mesajı gönder">
             <ArrowUp size={18} />
           </button>
         )}

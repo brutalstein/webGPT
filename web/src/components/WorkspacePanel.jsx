@@ -46,14 +46,15 @@ function TreeRow({ entry, selected, collapsed, onToggle, onOpen }) {
 
 export default function WorkspacePanel({ tree, selectedFile, loading, fileLoading, onRefresh, onOpenFile }) {
   const [collapsed, setCollapsed] = useState(() => new Set());
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState('idle');
   const entries = useMemo(() => tree?.entries || [], [tree]);
   const visibleEntries = useMemo(
     () => entries.filter((entry) => !hasCollapsedAncestor(entry.path, collapsed)),
     [entries, collapsed],
   );
 
-  useEffect(() => setCopied(false), [selectedFile?.path]);
+  useEffect(() => setCopyState('idle'), [selectedFile?.path]);
+  useEffect(() => setCollapsed(new Set()), [tree?.root]);
 
   const toggleDirectory = (path) => {
     setCollapsed((current) => {
@@ -65,15 +66,15 @@ export default function WorkspacePanel({ tree, selectedFile, loading, fileLoadin
   };
 
   const copyFile = async () => {
-    if (!selectedFile?.content) return;
+    if (!selectedFile || typeof selectedFile.content !== 'string' || copyState === 'copying') return;
+    setCopyState('copying');
     try {
       await copyText(selectedFile.content);
+      setCopyState('copied');
+      window.setTimeout(() => setCopyState('idle'), 1600);
     } catch {
-      setCopied(false);
-      return;
+      setCopyState('error');
     }
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
   };
 
   return (
@@ -111,11 +112,19 @@ export default function WorkspacePanel({ tree, selectedFile, loading, fileLoadin
             <strong>{selectedFile?.path || 'Dosya yükleniyor…'}</strong>
             {selectedFile && <span>{selectedFile.size} B</span>}
             {selectedFile && (
-              <button type="button" className="icon-button compact-icon" onClick={copyFile} title="Dosyayı panoya kopyala" aria-label="Dosyayı panoya kopyala">
-                {copied ? <Check size={13} /> : <Clipboard size={13} />}
+              <button
+                type="button"
+                className="icon-button compact-icon"
+                onClick={copyFile}
+                disabled={fileLoading || copyState === 'copying'}
+                title={copyState === 'error' ? 'Pano erişimi reddedildi; yeniden dene' : 'Dosyayı panoya kopyala'}
+                aria-label={copyState === 'copied' ? 'Dosya panoya kopyalandı' : 'Dosyayı panoya kopyala'}
+              >
+                {copyState === 'copied' ? <Check size={13} /> : <Clipboard size={13} />}
               </button>
             )}
           </div>
+          {copyState === 'error' && <div className="copy-feedback error" role="alert">Pano erişimi reddedildi.</div>}
           <pre aria-busy={fileLoading}>{fileLoading ? 'Dosya okunuyor…' : <code>{selectedFile?.content}</code>}</pre>
         </div>
       )}

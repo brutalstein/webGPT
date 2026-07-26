@@ -1,5 +1,12 @@
+const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
+
 export async function api(path, options = {}) {
-  const { headers: optionHeaders = {}, ...requestOptions } = options;
+  const {
+    headers: optionHeaders = {},
+    timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+    signal: callerSignal,
+    ...requestOptions
+  } = options;
   const headers = {
     Accept: 'application/json',
     'X-Requested-With': 'OS-Web',
@@ -9,15 +16,35 @@ export async function api(path, options = {}) {
     headers['Content-Type'] = 'application/json';
   }
 
+  const controller = new AbortController();
+  let timeoutId = 0;
+  let timedOut = false;
+  const abortFromCaller = () => controller.abort();
+  if (callerSignal?.aborted) abortFromCaller();
+  else callerSignal?.addEventListener('abort', abortFromCaller, { once: true });
+  if (Number(timeoutMs) > 0) {
+    timeoutId = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, Number(timeoutMs));
+  }
+
   let response;
   try {
     response = await fetch(path, {
       credentials: 'same-origin',
       ...requestOptions,
       headers,
+      signal: controller.signal,
     });
   } catch (error) {
+    if (controller.signal.aborted || error.name === 'AbortError') {
+      throw new Error(timedOut ? 'Yerel sunucu isteği zaman aşımına uğradı.' : 'Yerel sunucu isteği iptal edildi.');
+    }
     throw new Error(`Yerel sunucuya ulaşılamadı: ${error.message}`);
+  } finally {
+    window.clearTimeout(timeoutId);
+    callerSignal?.removeEventListener('abort', abortFromCaller);
   }
 
   if (response.status === 204) return null;

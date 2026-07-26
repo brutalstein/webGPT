@@ -20,25 +20,25 @@ function languageFromNode(node) {
 }
 
 function CodeBlock({ children }) {
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState('idle');
   const language = useMemo(() => languageFromNode(children), [children]);
   const copy = async () => {
     const text = extractText(children).replace(/\n$/, '');
     try {
       await copyText(text);
     } catch {
-      setCopied(false);
+      setCopyState('error');
       return;
     }
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
+    setCopyState('copied');
+    window.setTimeout(() => setCopyState('idle'), 1600);
   };
   return (
     <div className="code-block">
       <div className="code-toolbar">
         <span className="code-language">{language || 'text'}</span>
-        <button type="button" className="code-copy" onClick={copy} aria-label="Kod bloğunu kopyala">
-          {copied ? <Check size={13} /> : <Clipboard size={13} />}{copied ? 'Kopyalandı' : 'Kopyala'}
+        <button type="button" className="code-copy" onClick={copy} title={copyState === 'error' ? 'Pano erişimi reddedildi' : undefined} aria-label="Kod bloğunu kopyala">
+          {copyState === 'copied' ? <Check size={13} /> : <Clipboard size={13} />}{copyState === 'copied' ? 'Kopyalandı' : copyState === 'error' ? 'Tekrar dene' : 'Kopyala'}
         </button>
       </div>
       <pre>{children}</pre>

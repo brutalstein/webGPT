@@ -1,5 +1,14 @@
 # Değişiklik Günlüğü
 
+## 0.10.1
+
+- Web arayüzündeki bütün etkileşimler bağlantı, yükleme ve eşzamanlı işlem durumlarına göre açıkça kilitlendi.
+- Başarısız mesaj gönderiminde taslak geri yükleme, güvenli iptal durumu ve tekrar tıklama koruması eklendi.
+- Session arama/yenileme yarışları, HTTP zaman aşımı ve stale intelligence cevabı sorunları giderildi.
+- Global capability durumları Context & Skills paneline ve bootstrap API'sine bağlandı.
+- Boş dosya kopyalama, pano hata geri bildirimi, modal stacking ve React error boundary eklendi.
+- Activity detaylarının yapılandırılmış sonuçları gizlemesi ve alakasız temizleme düğmesi davranışı düzeltildi.
+
 ## 0.9.0
 
 - Native recursive file watcher, debounce ve periyodik doğrulama içeren sürekli proje zihin katmanı eklendi.

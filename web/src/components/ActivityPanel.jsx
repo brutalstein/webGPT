@@ -24,6 +24,7 @@ const toolIcons = {
   search_text: FileCode2,
   project_context: BrainCircuit,
   skill: Puzzle,
+  capability: Puzzle,
 };
 
 function formatDuration(milliseconds) {
@@ -35,7 +36,12 @@ function formatDuration(milliseconds) {
 function safeDetail(activity) {
   let value;
   try {
-    value = JSON.stringify(activity.arguments || activity.structured || activity, null, 2);
+    const detail = {};
+    if (activity.arguments && Object.keys(activity.arguments).length > 0) detail.arguments = activity.arguments;
+    if (activity.structured && Object.keys(activity.structured).length > 0) detail.result = activity.structured;
+    if (activity.preview) detail.preview = activity.preview;
+    if (activity.error) detail.error = activity.error;
+    value = JSON.stringify(Object.keys(detail).length > 0 ? detail : activity, null, 2);
   } catch {
     value = 'Detay serileştirilemedi.';
   }
@@ -76,6 +82,7 @@ const phaseCopy = {
   thinking: ['Thinking', 'Gemini yanıt veya sonraki araç adımını hazırlıyor'],
   responding: ['Yanıt oluşturuluyor', 'Görünür Gemini cevabı aktarılıyor'],
   tools: ['Araçlar çalışıyor', 'Yerel çalışma alanında doğrulanmış işlem yürütülüyor'],
+  cancelling: ['Durduruluyor', 'Gemini sağlayıcısına iptal sinyali iletildi'],
 };
 
 export default memo(function ActivityPanel({ activities, phase, connected }) {
