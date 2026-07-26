@@ -5,6 +5,7 @@ import dataclasses
 import enum
 import itertools
 import threading
+import uuid
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -43,6 +44,12 @@ class EventHub:
         self._subscribers: set[EventSubscription] = set()
         self._lock = threading.RLock()
         self._sequence = itertools.count(1)
+        self._stream_id = uuid.uuid4().hex
+
+    @property
+    def stream_id(self) -> str:
+        """Bu process içindeki event sequence uzayını benzersiz tanımlar."""
+        return self._stream_id
 
     def publish(self, event_type: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         event = {

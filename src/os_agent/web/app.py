@@ -308,6 +308,7 @@ def create_web_app(context: WebAppContext) -> FastAPI:
                 {
                     "type": "socket.ready",
                     "payload": {
+                        "stream_id": context.hub.stream_id,
                         "history": context.hub.history(),
                         "pending_approvals": context.approval.snapshot(),
                         "busy": context.worker.busy,

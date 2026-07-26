@@ -1,26 +1,81 @@
-import { ChevronRight, File, FileCode2, Folder, FolderOpen, RefreshCw } from 'lucide-react';
-import { useMemo } from 'react';
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Clipboard,
+  File,
+  FileCode2,
+  Folder,
+  FolderOpen,
+  RefreshCw,
+} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { copyText } from '../lib/clipboard';
 
-function TreeRow({ entry, onOpen }) {
+function hasCollapsedAncestor(path, collapsed) {
+  const parts = path.split('/');
+  for (let index = 1; index < parts.length; index += 1) {
+    if (collapsed.has(parts.slice(0, index).join('/'))) return true;
+  }
+  return false;
+}
+
+function TreeRow({ entry, selected, collapsed, onToggle, onOpen }) {
   const depth = Math.max(0, entry.path.split('/').length - 1);
   const isDirectory = entry.type === 'directory';
   const Icon = isDirectory ? Folder : FileCode2;
-  return (
-    <button
-      className={`tree-row ${isDirectory ? 'directory' : 'file'}`}
-      style={{ paddingLeft: `${10 + depth * 14}px` }}
-      onClick={() => !isDirectory && onOpen(entry.path)}
-      disabled={isDirectory}
-    >
-      {isDirectory ? <ChevronRight size={13} /> : <span className="tree-spacer" />}
+  const common = {
+    className: `tree-row ${isDirectory ? 'directory' : 'file'} ${selected ? 'selected' : ''}`,
+    role: 'treeitem',
+    'aria-level': depth + 1,
+    style: { paddingLeft: `${10 + depth * 14}px` },
+    title: entry.path,
+  };
+  const content = (
+    <>
+      {isDirectory ? (collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />) : <span className="tree-spacer" />}
       <Icon size={14} />
       <span>{entry.name}</span>
-    </button>
+    </>
   );
+  if (isDirectory) {
+    return <button type="button" {...common} onClick={() => onToggle(entry.path)} aria-expanded={!collapsed}>{content}</button>;
+  }
+  return <button type="button" {...common} onClick={() => onOpen(entry.path)} aria-current={selected ? 'true' : undefined}>{content}</button>;
 }
 
-export default function WorkspacePanel({ tree, selectedFile, onRefresh, onOpenFile }) {
+export default function WorkspacePanel({ tree, selectedFile, loading, fileLoading, onRefresh, onOpenFile }) {
+  const [collapsed, setCollapsed] = useState(() => new Set());
+  const [copied, setCopied] = useState(false);
   const entries = useMemo(() => tree?.entries || [], [tree]);
+  const visibleEntries = useMemo(
+    () => entries.filter((entry) => !hasCollapsedAncestor(entry.path, collapsed)),
+    [entries, collapsed],
+  );
+
+  useEffect(() => setCopied(false), [selectedFile?.path]);
+
+  const toggleDirectory = (path) => {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
+  const copyFile = async () => {
+    if (!selectedFile?.content) return;
+    try {
+      await copyText(selectedFile.content);
+    } catch {
+      setCopied(false);
+      return;
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  };
+
   return (
     <section className="inspector-section workspace-section">
       <div className="inspector-heading compact">
@@ -28,17 +83,40 @@ export default function WorkspacePanel({ tree, selectedFile, onRefresh, onOpenFi
           <span className="eyebrow">Workspace</span>
           <h2>Dosyalar</h2>
         </div>
-        <button className="icon-button" onClick={onRefresh} title="Dosyaları yenile"><RefreshCw size={15} /></button>
+        <button type="button" className="icon-button" onClick={onRefresh} title="Dosyaları yenile" aria-label="Dosyaları yenile" disabled={loading}>
+          <RefreshCw size={15} className={loading ? 'spin' : ''} />
+        </button>
       </div>
-      <div className="file-tree">
-        {entries.length === 0 ? (
+      {tree?.truncated && <div className="tree-warning">Dosya ağacı güvenli giriş sınırında kısaltıldı.</div>}
+      <div className="file-tree" role="tree" aria-label="Çalışma alanı dosyaları">
+        {loading && entries.length === 0 ? (
+          <div className="empty-inspector"><RefreshCw className="spin" size={20} /><span>Dosyalar yükleniyor.</span></div>
+        ) : visibleEntries.length === 0 ? (
           <div className="empty-inspector"><FolderOpen size={20} /><span>Çalışma alanı içeriği yüklenmedi.</span></div>
-        ) : entries.map((entry) => <TreeRow key={entry.path} entry={entry} onOpen={onOpenFile} />)}
+        ) : visibleEntries.map((entry) => (
+          <TreeRow
+            key={entry.path}
+            entry={entry}
+            selected={selectedFile?.path === entry.path}
+            collapsed={collapsed.has(entry.path)}
+            onToggle={toggleDirectory}
+            onOpen={onOpenFile}
+          />
+        ))}
       </div>
-      {selectedFile && (
+      {(selectedFile || fileLoading) && (
         <div className="file-preview">
-          <div className="file-preview-head"><File size={14} /><strong>{selectedFile.path}</strong><span>{selectedFile.size} B</span></div>
-          <pre><code>{selectedFile.content}</code></pre>
+          <div className="file-preview-head">
+            <File size={14} />
+            <strong>{selectedFile?.path || 'Dosya yükleniyor…'}</strong>
+            {selectedFile && <span>{selectedFile.size} B</span>}
+            {selectedFile && (
+              <button type="button" className="icon-button compact-icon" onClick={copyFile} title="Dosyayı panoya kopyala" aria-label="Dosyayı panoya kopyala">
+                {copied ? <Check size={13} /> : <Clipboard size={13} />}
+              </button>
+            )}
+          </div>
+          <pre aria-busy={fileLoading}>{fileLoading ? 'Dosya okunuyor…' : <code>{selectedFile?.content}</code>}</pre>
         </div>
       )}
     </section>
