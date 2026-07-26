@@ -1,5 +1,12 @@
 # Değişiklik Günlüğü
 
+## 0.10.3
+
+- Boş oluşturulan konuşma silme modalı gerçek, erişilebilir ve default-export edilen React bileşeniyle tamamlandı.
+- React build öncesine boş kaynak dosyası, eksik yerel modül ve eksik default export denetimi eklendi.
+- Sidebar ve konuşma silme regresyon testi sözdizimi düzeltildi; modalın focus trap ve kalıcı silme akışı doğrulandı.
+- Gelecekte aynı sınıf bozuklukların Vite aşamasına kadar ilerlemeden açık dosya adıyla durdurulması sağlandı.
+
 ## 0.10.2
 
 - Sol konuşma sidebar'ı masaüstü ve mobilde gerçekten kapatılıp yeniden açılabilir hâle getirildi.

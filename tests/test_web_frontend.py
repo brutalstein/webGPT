@@ -5,10 +5,40 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from os_agent.errors import ConfigurationError
 from os_agent.web.frontend import FrontendBuilder
 
 
 class FrontendBuilderTests(unittest.TestCase):
+    def test_source_preflight_rejects_empty_missing_and_non_default_modules(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "web"
+            components = source / "src" / "components"
+            components.mkdir(parents=True)
+            (source / "package.json").write_text('{"name":"test"}', encoding="utf-8")
+            (source / "src" / "App.jsx").write_text(
+                "import Dialog from './components/Dialog';\nexport default function App(){ return Dialog; }\n",
+                encoding="utf-8",
+            )
+            dialog = components / "Dialog.jsx"
+            dialog.write_text("", encoding="utf-8")
+            builder = FrontendBuilder(root, {})
+
+            with self.assertRaisesRegex(ConfigurationError, "kaynak dosyası boş"):
+                builder._validate_sources()
+
+            dialog.write_text("export function Dialog(){ return null; }\n", encoding="utf-8")
+            with self.assertRaisesRegex(ConfigurationError, "default export yok"):
+                builder._validate_sources()
+
+            dialog.unlink()
+            with self.assertRaisesRegex(ConfigurationError, "yerel modül bulunamadı"):
+                builder._validate_sources()
+
+            dialog.write_text("export default function Dialog(){ return null; }\n", encoding="utf-8")
+            builder._validate_sources()
+
     def test_source_and_dependency_hashes_are_independent(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

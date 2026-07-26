@@ -126,7 +126,11 @@ class WebUiRegressionTests(unittest.TestCase):
         self.assertIn("sidebar-collapsed", css)
         self.assertNotIn("sidebar-close mobile-only", sidebar)
         self.assertIn("onDeleteSession", sidebar)
-        self.assertIn("role="alertdialog"", modal)
+        self.assertIn("export default function DeleteSessionModal", modal)
+        self.assertIn('role="alertdialog"', modal)
+        self.assertIn("useDialogFocus", modal)
+        self.assertIn("onMouseDown", modal)
+        self.assertIn("Kalıcı olarak sil", modal)
         self.assertIn("method: 'DELETE'", app)
         self.assertIn('@app.delete("/api/sessions/{session_id}")', backend)
         self.assertIn("def _delete_session_sync", worker)
@@ -142,9 +146,6 @@ class WebUiRegressionTests(unittest.TestCase):
         self.assertIn("project_impact", config)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 class AgentIntelligenceUiTests(unittest.TestCase):
     def test_skills_and_context_panel_is_wired_to_backend(self) -> None:
         app = (ROOT / "web/src/App.jsx").read_text(encoding="utf-8")
@@ -156,3 +157,7 @@ class AgentIntelligenceUiTests(unittest.TestCase):
         self.assertIn("Project context", panel)
         self.assertIn('"/api/project-context"', backend)
         self.assertIn('"/api/skills"', backend)
+
+
+if __name__ == "__main__":
+    unittest.main()

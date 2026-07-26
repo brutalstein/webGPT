@@ -27,6 +27,14 @@ _RETRYABLE_NPM_ERRORS = (
 )
 
 
+_SOURCE_SUFFIXES = (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts")
+_LOCAL_DEFAULT_IMPORT = re.compile(
+    r"(?ms)^\s*import\s+(?!type\b)([A-Za-z_$][\w$]*)\s*"
+    r"(?:,\s*(?:\{.*?\}|\*\s+as\s+[A-Za-z_$][\w$]*))?\s+"
+    r"from\s+(['\"])(\.\.?/[^'\"]+)\2\s*;?"
+)
+_DEFAULT_EXPORT = re.compile(r"\bexport\s+default\b|\bexport\s*\{[^}]*\bdefault\b[^}]*\}", re.DOTALL)
+
 @dataclass(slots=True)
 class _CommandFailure(RuntimeError):
     description: str
@@ -76,6 +84,99 @@ class FrontendBuilder:
     def _dependencies_hash(self) -> str:
         candidates = [self.source_dir / "package.json", self.source_dir / "package-lock.json"]
         return self._hash_files([path for path in candidates if path.exists()], base=self.source_dir)
+
+    @staticmethod
+    def _without_js_comments(text: str) -> str:
+        """Kaynak ön denetiminde yorum içindeki sahte import/export eşleşmelerini azaltır."""
+        without_blocks = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+        return re.sub(r"(?m)^\s*//.*$", "", without_blocks)
+
+    @staticmethod
+    def _resolve_local_module(importer: Path, specifier: str, source_root: Path) -> Path | None:
+        raw_target = importer.parent / specifier
+        suffix = raw_target.suffix.casefold()
+        candidates: list[Path] = []
+        if suffix in _SOURCE_SUFFIXES:
+            candidates.append(raw_target)
+        elif suffix:
+            # CSS, JSON ve asset importları JavaScript default-export sözleşmesine tabi değildir.
+            return None
+        else:
+            candidates.extend(raw_target.with_suffix(extension) for extension in _SOURCE_SUFFIXES)
+            candidates.extend(raw_target / f"index{extension}" for extension in _SOURCE_SUFFIXES)
+
+        resolved_root = source_root.resolve()
+        for candidate in candidates:
+            try:
+                resolved = candidate.resolve()
+                resolved.relative_to(resolved_root)
+            except (OSError, ValueError):
+                continue
+            if resolved.is_file():
+                return resolved
+        return None
+
+    def _source_problems(self) -> list[str]:
+        source_root = self.source_dir / "src"
+        if not source_root.is_dir():
+            return [f"React kaynak klasörü bulunamadı: {source_root}"]
+
+        modules = sorted(
+            path
+            for path in source_root.rglob("*")
+            if path.is_file() and path.suffix.casefold() in _SOURCE_SUFFIXES
+        )
+        problems: list[str] = []
+        contents: dict[Path, str] = {}
+
+        for module in modules:
+            relative = module.relative_to(self.source_dir).as_posix()
+            try:
+                text = module.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                problems.append(f"{relative}: UTF-8 kaynak okunamadı ({exc})")
+                continue
+            contents[module.resolve()] = text
+            if not text.strip():
+                problems.append(f"{relative}: kaynak dosyası boş")
+
+        for importer in modules:
+            importer_text = contents.get(importer.resolve())
+            if importer_text is None or not importer_text.strip():
+                continue
+            clean_importer = self._without_js_comments(importer_text)
+            for binding, _, specifier in _LOCAL_DEFAULT_IMPORT.findall(clean_importer):
+                target = self._resolve_local_module(importer, specifier, source_root)
+                importer_name = importer.relative_to(self.source_dir).as_posix()
+                if target is None:
+                    problems.append(
+                        f"{importer_name}: {binding} için yerel modül bulunamadı ({specifier})"
+                    )
+                    continue
+                target_text = contents.get(target.resolve())
+                if target_text is None:
+                    try:
+                        target_text = target.read_text(encoding="utf-8")
+                    except (OSError, UnicodeError) as exc:
+                        problems.append(f"{target.relative_to(self.source_dir).as_posix()}: okunamadı ({exc})")
+                        continue
+                if not _DEFAULT_EXPORT.search(self._without_js_comments(target_text)):
+                    problems.append(
+                        f"{importer_name}: {binding} import edilen {specifier} modülünde default export yok"
+                    )
+
+        return list(dict.fromkeys(problems))
+
+    def _validate_sources(self) -> None:
+        problems = self._source_problems()
+        if not problems:
+            return
+        detail = "\n".join(f"- {problem}" for problem in problems[:30])
+        raise ConfigurationError(
+            "React kaynak ön denetimi başarısız oldu.\n\n"
+            f"{detail}\n\n"
+            "Boş/eksik modülü veya default export sözleşmesini düzeltip os.bat'i yeniden çalıştır."
+        )
 
     def _manifest(self) -> dict[str, Any]:
         path = self.source_dir / "package.json"
@@ -316,6 +417,7 @@ class FrontendBuilder:
             return self.dist_dir
         if not self.source_dir.is_dir() or not (self.source_dir / "package.json").is_file():
             raise ConfigurationError(f"Web kaynak klasörü bulunamadı: {self.source_dir}")
+        self._validate_sources()
         _, npm = self._validate_node()
 
         if not self.dependencies_ready():
