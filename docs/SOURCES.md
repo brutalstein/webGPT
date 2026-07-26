@@ -43,3 +43,25 @@
   - https://docs.github.com/en/repositories/working-with-files/using-files/downloading-source-code-archives
 - BM25 reference
   - Robertson, S. and Zaragoza, H. The Probabilistic Relevance Framework: BM25 and Beyond.
+
+
+## Continuous project intelligence
+
+- Tree-sitter incremental parsing and error-tolerant syntax trees
+  - https://tree-sitter.github.io/tree-sitter/
+  - https://tree-sitter.github.io/tree-sitter/using-parsers/3-advanced-parsing.html
+- Language Server Protocol 3.18 symbols, definitions and references
+  - https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/
+- SQLite FTS5 and BM25 rank
+  - https://www.sqlite.org/fts5.html
+- Watchdog recursive filesystem observers
+  - https://python-watchdog.readthedocs.io/
+- Tree-sitter language pack
+  - https://pypi.org/project/tree-sitter-language-pack/
+
+## Markdown rendering
+
+- GitHub Flavored Markdown plugin
+  - https://github.com/remarkjs/remark-gfm
+- Safe syntax highlighting with lowlight/highlight.js
+  - https://github.com/rehypejs/rehype-highlight

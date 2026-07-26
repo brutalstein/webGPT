@@ -3,3 +3,5 @@ rich>=13.7,<15
 fastapi>=0.128,<1
 uvicorn[standard]>=0.48,<1
 PyYAML>=6.0,<7
+watchdog>=6.0,<7
+tree-sitter-language-pack>=1.13.2,<2

@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
 from os_agent.config import load_config
 from os_agent.tools import LocalToolRuntime
 from os_agent.tools.models import ToolCall, ToolRisk
-
-ROOT = Path(__file__).resolve().parents[1]
 
 
 class AgentIntelligenceRuntimeTests(unittest.TestCase):
@@ -53,6 +55,7 @@ license: MIT
             self.assertTrue(result.ok, result.content)
             self.assertIn("Önce kontrolcü sınırlarını", result.content)
             self.assertEqual(runtime.skills.activated("session-x"), ["controller-review"])
+            runtime.close()
 
     def test_network_inspection_and_install_are_confirmation_gated(self) -> None:
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {"LOCALAPPDATA": temp}):
@@ -68,6 +71,7 @@ license: MIT
             )
             self.assertFalse(denied.ok)
             self.assertIn("onayı", denied.content)
+            runtime.close()
 
 
 if __name__ == "__main__":

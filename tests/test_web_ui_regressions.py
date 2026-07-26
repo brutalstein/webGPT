@@ -65,6 +65,27 @@ class WebUiRegressionTests(unittest.TestCase):
         self.assertIn("code-copy", markdown)
         self.assertIn("content-visibility:auto", css)
 
+    def test_assistant_messages_use_gfm_and_syntax_highlighting(self) -> None:
+        component = self.read("web/src/components/MarkdownMessage.jsx")
+        package = self.read("web/package.json")
+        protocol = self.read("src/os_agent/tools/protocol.py")
+        self.assertIn("remarkGfm", component)
+        self.assertIn("rehypeHighlight", component)
+        self.assertIn('"remark-gfm": "4.0.1"', package)
+        self.assertIn('"rehype-highlight": "7.0.2"', package)
+        self.assertIn("temiz Markdown", protocol)
+        self.assertNotIn("rehype-raw", component)
+
+    def test_project_brain_exposes_continuous_structural_health(self) -> None:
+        runtime = self.read("src/os_agent/tools/runtime.py")
+        engine = self.read("src/os_agent/context/engine.py")
+        config = self.read("config.json")
+        self.assertIn("self.project_context.start()", runtime)
+        self.assertIn("ProjectFileWatcher", engine)
+        self.assertIn("ContextIndexStore", engine)
+        self.assertIn("search_project_symbols", config)
+        self.assertIn("project_impact", config)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,11 +3,15 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 import subprocess
 import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
 
 from os_agent.errors import SkillInstallError, SkillValidationError
 from os_agent.skills.github import parse_github_source

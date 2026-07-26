@@ -1,5 +1,16 @@
 # Değişiklik Günlüğü
 
+## 0.9.0
+
+- Native recursive file watcher, debounce ve periyodik doğrulama içeren sürekli proje zihin katmanı eklendi.
+- Prompt öncesi bounded freshness barrier ile kirli bağlamın senkron doğrulanması eklendi.
+- Tree-sitter tabanlı sembol/import/call analizi ve regex fallback eklendi.
+- Workspace başına SQLite WAL + FTS5 chunk/symbol deposu ve ilişki grafiği eklendi.
+- Query planning, graph expansion, recent-change journal ve session working-set retrieval eklendi.
+- `search_project_symbols`, `project_impact` ve `context_health` araçları eklendi.
+- Tool sonuçları context working set ve invalidation sistemiyle bağlandı.
+- Gemini nihai yanıtları için güvenli Markdown sözleşmesi, GFM tablolar/görev listeleri ve syntax highlighting eklendi.
+
 ## 0.8.0
 
 - Artımlı proje bağlam motoru ve path-boosted BM25 retrieval eklendi.

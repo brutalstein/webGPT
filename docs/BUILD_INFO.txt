@@ -1,13 +1,13 @@
 OS Modern Agent Workspace
-Version: 0.8.0
-Target base: brutalstein/webGPT 34b9cf2ba67c076c836146a042ad2ce5fd38e76a
+Version: 0.9.0
+Target base: brutalstein/webGPT 4b2493442428901f3a9b407c3dd9805465b633fc
 Primary entry: os.bat
 Gemini provider: Chrome CDP, headless by default
-ChatGPT provider: OpenAI Responses + Conversations API, terminal-only
 State engine: SQLite WAL
 Web UI: React 19 + Vite 8 production bundle
 Web backend: FastAPI + WebSocket, loopback-only
-Agent runtime: sandboxed tools + project context + Agent Skills
-Project retrieval: incremental gzip index + path boost + BM25
-Skill install: GitHub quarantine + commit pin + SHA-256 provenance + explicit approvals
+Agent runtime: sandboxed tools + secure Agent Skills
+Project brain: Watchdog + freshness barrier + Tree-sitter + SQLite FTS5 knowledge graph
+Retrieval: query planning + hybrid rank + graph expansion + session working set
+Markdown: react-markdown + GFM + safe syntax highlighting; raw HTML disabled
 Skill script execution: disabled

@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
 
 from os_agent.context import ProjectContextEngine
 from os_agent.tools.workspace import WorkspaceManager
@@ -38,6 +42,7 @@ class ProjectContextTests(unittest.TestCase):
         )
 
     def tearDown(self) -> None:
+        self.engine.close()
         self.temp.cleanup()
 
     def test_builds_incremental_context_and_retrieves_relevant_lines(self) -> None:

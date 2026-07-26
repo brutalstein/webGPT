@@ -12,10 +12,16 @@ function ContextCard({ context }) {
         <>
           <div className="metric-grid">
             <div><strong>{context.file_count || 0}</strong><span>dosya</span></div>
+            <div><strong>{context.symbols || context.store?.symbols || 0}</strong><span>sembol</span></div>
+            <div><strong>{context.edges || context.store?.edges || 0}</strong><span>ilişki</span></div>
+          </div>
+          <div className="metric-grid context-secondary-metrics">
             <div><strong>{Math.round((context.total_text_bytes || 0) / 1024)}</strong><span>KB metin</span></div>
-            <div><strong>{context.reused || 0}</strong><span>yeniden kullanılan</span></div>
+            <div><strong>{context.generation || 0}</strong><span>generation</span></div>
+            <div><strong>{context.store?.fts5 ? 'FTS5' : 'fallback'}</strong><span>arama</span></div>
           </div>
           <div className="context-line"><GitBranch size={13} /><span>{git.repository ? `${git.branch || 'detached'} · ${git.head || ''}` : 'Git deposu değil'}</span></div>
+          <div className="context-line"><BrainCircuit size={13} /><span>{context.background_worker ? `${context.watcher || 'watcher'} · sürekli senkron` : 'Periyodik doğrulama'}{context.dirty ? ' · güncelleme bekliyor' : ' · güncel'}</span></div>
           <div className="chip-list">
             {languages.slice(0, 8).map(([name, count]) => <span key={name}>{name} · {count}</span>)}
           </div>

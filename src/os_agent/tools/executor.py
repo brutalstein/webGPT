@@ -105,11 +105,6 @@ class ToolExecutor:
                 services=self.services,
             )
             payload = tool.execute(context, call.arguments)
-            if definition.risk.value in {"write", "execute"}:
-                context_engine = self.services.get("project_context")
-                mark_dirty = getattr(context_engine, "mark_dirty", None)
-                if callable(mark_dirty):
-                    mark_dirty()
             duration = int((time.monotonic() - started) * 1000)
             content_limit = max(1000, int(self.settings.get("max_tool_result_chars", 24000)))
             content = payload.content
@@ -133,6 +128,19 @@ class ToolExecutor:
                 error=f"{type(exc).__name__}: {exc}",
                 duration_ms=duration,
             )
+
+        context_engine = self.services.get("project_context")
+        record_activity = getattr(context_engine, "record_tool_activity", None)
+        if callable(record_activity):
+            try:
+                record_activity(session_id, call, result)
+            except Exception:
+                # Context enrichment must never break the requested tool operation.
+                pass
+        elif definition.risk.value in {"write", "execute"}:
+            mark_dirty = getattr(context_engine, "mark_dirty", None)
+            if callable(mark_dirty):
+                mark_dirty()
 
         self._executed[call.call_id] = result
         self.audit.write(

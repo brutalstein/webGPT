@@ -185,3 +185,12 @@ Gemini artık seçilen repository için artımlı bir proje bağlam indeksi olu�
 Agent Skills sistemi `SKILL.md` paketlerini progressive disclosure ile kullanır. Gemini başlangıçta yalnızca skill adı ve açıklamasını görür; görev eşleşirse talimatı etkinleştirir, ek kaynakları yalnızca gerektiğinde okur.
 
 Public GitHub skill URL'si sohbete verildiğinde Gemini önce kaynağı karantinaya indirip commit, lisans, dosya hashleri, scriptler ve risk bulguları açısından inceler. Kurulum ikinci ve ayrı bir onayla `%LOCALAPPDATA%\OS\skills` alanına atomik yapılır. İndirilen scriptler otomatik çalıştırılmaz. Ayrıntılar `docs/PROJECT_CONTEXT.md` ve `docs/SKILLS.md` içindedir.
+
+
+## Sürekli proje zihin katmanı ve zengin Markdown
+
+OS, seçili projeyi native dosya watcher ile arka planda izler. Değişiklikler debounce edilerek artımlı indekslenir; her prompt öncesinde bağlam güncelliği doğrulanır. Tree-sitter sembol analizi, SQLite FTS5 araması, import/call ilişkileri, yakın değişiklikler ve oturum working set'i birlikte kullanılır.
+
+Yeni bağlam araçları `search_project_symbols`, `project_impact` ve `context_health` üzerinden Gemini'nin tanım, ilişki ve refactor etkisini doğrulamasını sağlar. Sağlık metrikleri web arayüzündeki **Context & Skills** panelinde görünür.
+
+Gemini'nin nihai yanıtları güvenli Markdown olarak işlenir. GFM tabloları, görev listeleri, strikethrough, otomatik bağlantılar, dil etiketli kod blokları, kopyalama ve syntax highlighting desteklenir; ham HTML çalıştırılmaz.

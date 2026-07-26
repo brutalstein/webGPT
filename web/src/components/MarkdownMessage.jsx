@@ -1,6 +1,8 @@
 import { Check, Clipboard } from 'lucide-react';
-import { memo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import rehypeHighlight from 'rehype-highlight';
+import remarkGfm from 'remark-gfm';
 import { copyText } from '../lib/clipboard';
 
 function extractText(node) {
@@ -10,8 +12,16 @@ function extractText(node) {
   return '';
 }
 
+function languageFromNode(node) {
+  const child = Array.isArray(node) ? node[0] : node;
+  const className = child?.props?.className || '';
+  const match = String(className).match(/(?:language-|lang-)([\w#+.-]+)/i);
+  return match?.[1] || '';
+}
+
 function CodeBlock({ children }) {
   const [copied, setCopied] = useState(false);
+  const language = useMemo(() => languageFromNode(children), [children]);
   const copy = async () => {
     const text = extractText(children).replace(/\n$/, '');
     try {
@@ -25,9 +35,12 @@ function CodeBlock({ children }) {
   };
   return (
     <div className="code-block">
-      <button type="button" className="code-copy" onClick={copy} aria-label="Kod bloğunu kopyala">
-        {copied ? <Check size={13} /> : <Clipboard size={13} />}{copied ? 'Kopyalandı' : 'Kopyala'}
-      </button>
+      <div className="code-toolbar">
+        <span className="code-language">{language || 'text'}</span>
+        <button type="button" className="code-copy" onClick={copy} aria-label="Kod bloğunu kopyala">
+          {copied ? <Check size={13} /> : <Clipboard size={13} />}{copied ? 'Kopyalandı' : 'Kopyala'}
+        </button>
+      </div>
       <pre>{children}</pre>
     </div>
   );
@@ -44,10 +57,13 @@ export default memo(function MarkdownMessage({ role, text, streaming = false }) 
         <div className="message-label">{assistant ? 'Gemini' : 'Sen'}</div>
         {assistant ? (
           <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]}
             components={{
               a: ({ children, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{children}</a>,
               pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
-              table: ({ children }) => <div className="table-scroll"><table>{children}</table></div>,
+              table: ({ children }) => <div className="table-scroll" role="region" aria-label="Markdown tablosu" tabIndex="0"><table>{children}</table></div>,
+              input: ({ type, ...props }) => type === 'checkbox' ? <input type="checkbox" {...props} disabled aria-label="Görev durumu" /> : <input type={type} {...props} />,
               code: ({ className, children, ...props }) => {
                 const inline = !className && !String(children).includes('\n');
                 return inline ? <code className="inline-code" {...props}>{children}</code> : <code className={className} {...props}>{children}</code>;

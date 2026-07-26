@@ -152,6 +152,7 @@ def main() -> int:
     console = Console(highlight=False)
     registry: ProviderRegistry | None = None
     database: StateDatabase | None = None
+    tool_runtime: LocalToolRuntime | None = None
 
     try:
         config = load_config(ROOT / "config.json")
@@ -210,6 +211,8 @@ def main() -> int:
     finally:
         if registry is not None:
             registry.close_all()
+        if tool_runtime is not None:
+            tool_runtime.close()
         if database is not None:
             database.checkpoint()
 

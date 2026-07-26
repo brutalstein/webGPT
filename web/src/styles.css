@@ -498,3 +498,31 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visib
 @media (max-width: 560px) {
   .metric-grid { grid-template-columns:1fr; }
 }
+
+/* Rich, safe Markdown presentation. No raw HTML is rendered. */
+.message-body h4,.message-body h5,.message-body h6 { color:#edf0f7; line-height:1.35; margin:15px 0 7px; }
+.message-body h4 { font-size:13px; }.message-body h5,.message-body h6 { font-size:12px; }
+.message-body hr { height:1px; margin:18px 0; border:0; background:var(--border-strong); }
+.message-body ul,.message-body ol { margin:8px 0 12px; }
+.message-body li { margin:3px 0; }
+.message-body li > p { margin:0; }
+.message-body .contains-task-list { padding-left:3px; list-style:none; }
+.message-body .task-list-item { display:flex; align-items:flex-start; gap:8px; }
+.message-body .task-list-item > input { flex:0 0 auto; width:14px; height:14px; margin:5px 0 0; accent-color:var(--accent); }
+.message-body del { color:#7d8595; text-decoration-thickness:1px; }
+.message-body strong { color:#f2f4f8; font-weight:720; }
+.message-body blockquote p:last-child { margin-bottom:0; }
+.code-toolbar { position:absolute; inset:0 0 auto; z-index:2; display:flex; align-items:center; justify-content:space-between; height:31px; padding:0 7px 0 12px; border-bottom:1px solid var(--border); border-radius:11px 11px 0 0; background:rgba(15,18,26,.96); }
+.code-language { color:#747e90; font:9px/1 "Cascadia Code","SFMono-Regular",Consolas,monospace; letter-spacing:.08em; text-transform:uppercase; }
+.code-copy { position:static; }
+.table-scroll:focus-visible { outline:2px solid rgba(126,111,255,.72); outline-offset:2px; }
+.table-scroll tr:last-child td { border-bottom:0; }
+.table-scroll th:last-child,.table-scroll td:last-child { border-right:0; }
+.hljs-comment,.hljs-quote { color:#6f788a; font-style:italic; }
+.hljs-keyword,.hljs-selector-tag,.hljs-literal,.hljs-section,.hljs-link { color:#c39bff; }
+.hljs-string,.hljs-title,.hljs-name,.hljs-type,.hljs-attribute,.hljs-symbol,.hljs-bullet,.hljs-addition { color:#8ed7b3; }
+.hljs-number,.hljs-meta,.hljs-built_in,.hljs-builtin-name,.hljs-params { color:#f2bb7b; }
+.hljs-variable,.hljs-template-variable,.hljs-selector-id,.hljs-selector-class { color:#83c6ff; }
+.hljs-deletion { color:#ff8b96; }
+.hljs-emphasis { font-style:italic; }.hljs-strong { font-weight:700; }
+.context-secondary-metrics { margin-top:7px; }

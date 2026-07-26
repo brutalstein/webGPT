@@ -75,6 +75,7 @@ class LocalToolRuntime:
             skills=self.skills,
         )
         self.agent = GeminiToolAgent(self.protocol, self.executor, self.settings)
+        self.project_context.start()
 
     @property
     def enabled(self) -> bool:
@@ -97,7 +98,7 @@ class LocalToolRuntime:
         self.skills.set_activity_handler(handler)
 
     def workspace_changed(self) -> None:
-        self.project_context.mark_dirty()
+        self.project_context.workspace_changed()
         self.skills.refresh()
 
     def run(
@@ -110,6 +111,9 @@ class LocalToolRuntime:
         if not self.provider_enabled(provider_name):
             return sender(prompt, session_id)
         return self.agent.run(sender, prompt, session_id)
+
+    def close(self) -> None:
+        self.project_context.close()
 
     def status(self, *, session_id: str | None = None) -> dict[str, Any]:
         allowed = {str(item) for item in self.settings.get("allowed_tools", [])}

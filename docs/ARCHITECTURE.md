@@ -92,3 +92,27 @@ ToolProtocol initial contract
 Project context and skills are services of `LocalToolRuntime`; they are not implemented inside the React UI or Gemini provider. CLI and web therefore share the same catalog, provenance, trust and retrieval behavior.
 
 GitHub skill installation never imports downloaded Python modules into the OS process. Downloaded packages are instruction/resource data. Any future executable plugin host must remain a separate, disabled-by-default sandbox boundary.
+
+
+## Continuous project brain
+
+```text
+Watchdog events ─► debounce journal ─► incremental scanner
+                                         ├─ text chunks
+                                         ├─ Tree-sitter symbols
+                                         └─ import/call graph
+                                                  │
+                                                  ▼
+                                      SQLite WAL + FTS5 store
+                                                  │
+User prompt ─► freshness barrier ─► query planner ├─ lexical/path rank
+                                                  ├─ symbol search
+                                                  ├─ graph expansion
+                                                  └─ session working set
+```
+
+Context worker, Playwright worker ve FastAPI event loop birbirinden ayrıdır. SQLite connection nesneleri thread'ler arasında paylaşılmaz. Workspace değişimi watcher/store yaşam döngüsünü yeniden bağlar; kapanışta observer, context worker ve WAL checkpoint sıralı kapatılır.
+
+## Markdown presentation boundary
+
+Gemini nihai cevap sözleşmesi Markdown ister. React katmanı `react-markdown`, `remark-gfm` ve `rehype-highlight` kullanır. `rehype-raw` kullanılmaz; bu nedenle model çıktısındaki ham HTML DOM'a yürütülebilir içerik olarak aktarılmaz.
