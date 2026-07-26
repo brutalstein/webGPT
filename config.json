@@ -101,7 +101,16 @@
       "replace_text",
       "create_directory",
       "run_command",
-      "git_status"
+      "git_status",
+      "project_context",
+      "search_project_context",
+      "refresh_project_context",
+      "list_skills",
+      "activate_skill",
+      "read_skill_resource",
+      "inspect_github_skill",
+      "install_inspected_skill",
+      "uninstall_skill"
     ],
     "allowed_executables": [
       "git",
@@ -172,5 +181,43 @@
     "workspace_tree_depth": 3,
     "frontend_install_timeout_seconds": 600,
     "frontend_build_timeout_seconds": 180
+  },
+  "project_context": {
+    "enabled": true,
+    "cache_keep": 20,
+    "max_files": 3500,
+    "max_file_bytes": 262144,
+    "max_total_text_bytes": 6291456,
+    "chunk_chars": 1600,
+    "chunk_overlap_chars": 180,
+    "retrieval_hits": 6,
+    "automatic_retrieval_hits": 5,
+    "automatic_context_max_chars": 9000,
+    "foundation_files": 4,
+    "foundation_context_max_chars": 3500,
+    "brief_max_chars": 5000,
+    "refresh_min_interval_seconds": 3,
+    "git_list_timeout_seconds": 12,
+    "excluded_path_prefixes": [
+      ".agents/skills",
+      ".os/skills"
+    ]
+  },
+  "skills": {
+    "enabled": true,
+    "project_skill_directories": [
+      ".agents/skills",
+      ".os/skills"
+    ],
+    "max_skill_body_chars": 20000,
+    "activation_max_chars": 20000,
+    "activation_session_limit": 200,
+    "max_resource_bytes": 524288,
+    "max_files": 250,
+    "max_total_bytes": 5242880,
+    "max_single_file_bytes": 1048576,
+    "git_timeout_seconds": 90,
+    "inspection_ttl_seconds": 3600,
+    "automatic_script_execution": false
   }
 }

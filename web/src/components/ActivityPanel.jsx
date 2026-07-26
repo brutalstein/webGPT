@@ -8,6 +8,8 @@ import {
   SquareTerminal,
   Wrench,
   X,
+  BrainCircuit,
+  Puzzle,
 } from 'lucide-react';
 import { memo, useMemo, useState } from 'react';
 
@@ -20,6 +22,8 @@ const toolIcons = {
   create_directory: FileCode2,
   list_directory: FileCode2,
   search_text: FileCode2,
+  project_context: BrainCircuit,
+  skill: Puzzle,
 };
 
 function formatDuration(milliseconds) {

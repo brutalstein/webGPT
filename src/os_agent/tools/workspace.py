@@ -19,6 +19,7 @@ class WorkspaceSnapshot:
     root: str | None
     selected_at: str | None
     source: str
+    trusted: bool
 
 
 class WorkspaceManager:
@@ -32,6 +33,7 @@ class WorkspaceManager:
         self._root: Path | None = None
         self._selected_at: str | None = None
         self._source = "unset"
+        self._trusted = False
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         self.backup_root.mkdir(parents=True, exist_ok=True)
         self._load()
@@ -46,14 +48,26 @@ class WorkspaceManager:
     def active(self) -> bool:
         return self._root is not None and self._root.is_dir()
 
+    @property
+    def trusted(self) -> bool:
+        """Proje-local skill ve talimatların yüklenmesine kullanıcı güveni."""
+        return self.active and self._trusted
+
     def snapshot(self) -> WorkspaceSnapshot:
         return WorkspaceSnapshot(
             root=str(self._root) if self._root else None,
             selected_at=self._selected_at,
             source=self._source,
+            trusted=self._trusted,
         )
 
-    def select(self, path: str | Path, *, source: str = "user") -> Path:
+    def select(
+        self,
+        path: str | Path,
+        *,
+        source: str = "user",
+        trusted: bool | None = None,
+    ) -> Path:
         candidate = Path(path).expanduser()
         try:
             resolved = candidate.resolve(strict=True)
@@ -68,6 +82,7 @@ class WorkspaceManager:
             self._root = resolved
             self._selected_at = datetime.now().isoformat(timespec="seconds")
             self._source = source
+            self._trusted = bool(trusted) if trusted is not None else source not in {"process_cwd", "unset"}
             self._save()
         return resolved
 
@@ -76,6 +91,7 @@ class WorkspaceManager:
             self._root = None
             self._selected_at = None
             self._source = "unset"
+            self._trusted = False
             self._save()
 
     def require_root(self) -> Path:
@@ -159,6 +175,7 @@ class WorkspaceManager:
             "current_directory": snapshot.root,
             "selected_at": snapshot.selected_at,
             "source": snapshot.source,
+            "trusted": snapshot.trusted,
         }
 
     def _load(self) -> None:
@@ -173,14 +190,18 @@ class WorkspaceManager:
                     self._root = root
                     self._selected_at = str(payload.get("selected_at") or "") or None
                     self._source = str(payload.get("source") or "persisted")
+                    self._trusted = bool(
+                        payload.get("trusted", self._source not in {"process_cwd", "unset"})
+                    )
         except (OSError, ValueError, RuntimeError, json.JSONDecodeError):
             self._root = None
 
     def _save(self) -> None:
         payload = {
-            "version": 1,
+            "version": 2,
             "root": str(self._root) if self._root else None,
             "selected_at": self._selected_at,
             "source": self._source,
+            "trusted": self._trusted,
         }
         self.atomic_write(self.state_path, json.dumps(payload, ensure_ascii=False, indent=2))

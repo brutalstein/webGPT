@@ -65,3 +65,30 @@ TerminalApplication ── Web seçeneği ──► FastAPI/Uvicorn (127.0.0.1)
 ```
 
 Web ve terminal iki ayrı ajan uygulaması oluşturmaz. Aynı provider registry, SQLite store, memory store ve tool runtime paylaşılır. Web kapandığında provider güvenli biçimde durdurulur ve terminal onay handler'ı geri yüklenir.
+
+## Project intelligence plane
+
+```text
+User prompt
+   │
+   ├─► ProjectContextEngine
+   │      ├─ git-aware file discovery
+   │      ├─ incremental gzip cache
+   │      ├─ line-addressable chunks
+   │      └─ path boost + BM25 retrieval
+   │
+   ├─► SkillManager catalog (tier 1 metadata)
+   │      ├─ global skills
+   │      └─ trusted workspace skills
+   │
+   ▼
+ToolProtocol initial contract
+   │
+   ├─ activate_skill (tier 2 instructions)
+   ├─ read_skill_resource (tier 3 resource)
+   └─ inspect/install GitHub skill (approval gated)
+```
+
+Project context and skills are services of `LocalToolRuntime`; they are not implemented inside the React UI or Gemini provider. CLI and web therefore share the same catalog, provenance, trust and retrieval behavior.
+
+GitHub skill installation never imports downloaded Python modules into the OS process. Downloaded packages are instruction/resource data. Any future executable plugin host must remain a separate, disabled-by-default sandbox boundary.

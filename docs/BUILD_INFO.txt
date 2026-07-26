@@ -1,12 +1,13 @@
-OS Modern Terminal Workspace
-Version: 0.7.0
-Target base: brutalstein/webGPT 5e9e5bc6c2220b963c6bb2352c89959fbb511409
+OS Modern Agent Workspace
+Version: 0.8.0
+Target base: brutalstein/webGPT 34b9cf2ba67c076c836146a042ad2ce5fd38e76a
 Primary entry: os.bat
 Gemini provider: Chrome CDP, headless by default
 ChatGPT provider: OpenAI Responses + Conversations API, terminal-only
-Secret storage: Windows DPAPI or OPENAI_API_KEY
 State engine: SQLite WAL
-Legacy migration: sessions.json + memory.json
 Web UI: React 19 + Vite 8 production bundle
 Web backend: FastAPI + WebSocket, loopback-only
-Agent transport: bounded event hub + single Playwright worker
+Agent runtime: sandboxed tools + project context + Agent Skills
+Project retrieval: incremental gzip index + path boost + BM25
+Skill install: GitHub quarantine + commit pin + SHA-256 provenance + explicit approvals
+Skill script execution: disabled

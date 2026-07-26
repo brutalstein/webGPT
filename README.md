@@ -171,3 +171,17 @@ Web çalışma alanında:
 İlk web çalıştırmasında Node.js 22.12+ ve npm gerekir. Paketler yalnızca `package.json` değiştiğinde, React üretim derlemesi ise yalnızca web kaynakları değiştiğinde yeniden hazırlanır.
 
 `Thinking` göstergesi yalnızca çalışma aşamasını belirtir; modelin gizli düşünce zinciri gösterilmez. Gemini web sayfasında görünür yanıt parça parça güncelleniyorsa OS aynı görünür metni artımlı olarak arayüze iletir.
+
+
+## Proje bağlamı ve Agent Skills
+
+Gemini artık seçilen repository için artımlı bir proje bağlam indeksi oluşturur. Git deposunda `git ls-files`, diğer klasörlerde sandbox'lı tarama kullanılır; değişmeyen dosya chunk'ları yeniden kullanılır. Göreve uygun parçalar path boost + BM25 retrieval ile başlangıç bağlamına eklenir.
+
+```powershell
+.\os.bat --refresh-context
+.\os.bat --skills
+```
+
+Agent Skills sistemi `SKILL.md` paketlerini progressive disclosure ile kullanır. Gemini başlangıçta yalnızca skill adı ve açıklamasını görür; görev eşleşirse talimatı etkinleştirir, ek kaynakları yalnızca gerektiğinde okur.
+
+Public GitHub skill URL'si sohbete verildiğinde Gemini önce kaynağı karantinaya indirip commit, lisans, dosya hashleri, scriptler ve risk bulguları açısından inceler. Kurulum ikinci ve ayrı bir onayla `%LOCALAPPDATA%\OS\skills` alanına atomik yapılır. İndirilen scriptler otomatik çalıştırılmaz. Ayrıntılar `docs/PROJECT_CONTEXT.md` ve `docs/SKILLS.md` içindedir.

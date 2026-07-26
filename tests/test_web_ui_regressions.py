@@ -68,3 +68,15 @@ class WebUiRegressionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class AgentIntelligenceUiTests(unittest.TestCase):
+    def test_skills_and_context_panel_is_wired_to_backend(self) -> None:
+        app = (ROOT / "web/src/App.jsx").read_text(encoding="utf-8")
+        panel = (ROOT / "web/src/components/SkillsPanel.jsx").read_text(encoding="utf-8")
+        backend = (ROOT / "src/os_agent/web/app.py").read_text(encoding="utf-8")
+        self.assertIn("SkillsPanel", app)
+        self.assertIn("/api/skills", app)
+        self.assertIn("skill.activated", app)
+        self.assertIn("Project context", panel)
+        self.assertIn('"/api/project-context"', backend)
+        self.assertIn('"/api/skills"', backend)

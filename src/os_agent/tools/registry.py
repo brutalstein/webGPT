@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from ..errors import ToolValidationError
@@ -14,6 +14,7 @@ class ToolContext:
     workspace: WorkspaceManager
     settings: dict[str, Any]
     session_id: str
+    services: dict[str, Any] = field(default_factory=dict)
 
 
 class Tool(ABC):
@@ -70,5 +71,28 @@ class ToolRegistry:
                 raise ToolValidationError(f"{name}.{key} tam sayı olmalı.")
             if expected == "boolean" and not isinstance(value, bool):
                 raise ToolValidationError(f"{name}.{key} boolean olmalı.")
-            if expected == "array" and not isinstance(value, list):
-                raise ToolValidationError(f"{name}.{key} liste olmalı.")
+            if expected == "array":
+                if not isinstance(value, list):
+                    raise ToolValidationError(f"{name}.{key} liste olmalı.")
+                item_schema = definition.get("items", {})
+                if item_schema.get("type") == "string" and not all(isinstance(item, str) for item in value):
+                    raise ToolValidationError(f"{name}.{key} yalnızca metin elemanları içermeli.")
+                if "minItems" in definition and len(value) < int(definition["minItems"]):
+                    raise ToolValidationError(f"{name}.{key} en az {definition['minItems']} eleman içermeli.")
+                if "maxItems" in definition and len(value) > int(definition["maxItems"]):
+                    raise ToolValidationError(f"{name}.{key} en fazla {definition['maxItems']} eleman içermeli.")
+            if expected == "string" and isinstance(value, str):
+                if "minLength" in definition and len(value) < int(definition["minLength"]):
+                    raise ToolValidationError(f"{name}.{key} en az {definition['minLength']} karakter olmalı.")
+                if "maxLength" in definition and len(value) > int(definition["maxLength"]):
+                    raise ToolValidationError(f"{name}.{key} en fazla {definition['maxLength']} karakter olmalı.")
+                pattern = definition.get("pattern")
+                if pattern:
+                    import re
+                    if re.fullmatch(str(pattern), value) is None:
+                        raise ToolValidationError(f"{name}.{key} beklenen biçime uymuyor.")
+            if expected == "integer" and isinstance(value, int) and not isinstance(value, bool):
+                if "minimum" in definition and value < int(definition["minimum"]):
+                    raise ToolValidationError(f"{name}.{key} en az {definition['minimum']} olmalı.")
+                if "maximum" in definition and value > int(definition["maximum"]):
+                    raise ToolValidationError(f"{name}.{key} en fazla {definition['maximum']} olmalı.")

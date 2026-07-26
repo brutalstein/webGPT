@@ -44,7 +44,10 @@ class GeminiToolAgent:
         )
         if preflight_results:
             self._emit("agent.preflight", {"session_id": session_id, "calls": len(preflight_results)})
-        response = sender(self.protocol.initial_prompt(user_prompt, preflight_results), session_id)
+        response = sender(
+            self.protocol.initial_prompt(user_prompt, preflight_results, session_id=session_id),
+            session_id,
+        )
 
         for round_index in range(max_rounds):
             self._emit("agent.round", {"session_id": session_id, "round": round_index + 1})
@@ -65,6 +68,16 @@ class GeminiToolAgent:
                         "workspace": self.protocol.workspace.describe(),
                         "tool_rounds": round_index,
                         "tool_trace": trace,
+                        "project_context": (
+                            self.protocol.project_context.status(refresh=False)
+                            if self.protocol.project_context is not None
+                            else None
+                        ),
+                        "active_skills": (
+                            self.protocol.skills.activated(session_id)
+                            if self.protocol.skills is not None
+                            else []
+                        ),
                     }
                 )
                 self._emit(

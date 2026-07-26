@@ -7,6 +7,7 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  Puzzle,
   RotateCcw,
   Sparkles,
   X,
@@ -17,6 +18,7 @@ import ApprovalModal from './components/ApprovalModal';
 import Composer from './components/Composer';
 import MarkdownMessage from './components/MarkdownMessage';
 import SettingsModal from './components/SettingsModal';
+import SkillsPanel from './components/SkillsPanel';
 import Sidebar from './components/Sidebar';
 import WorkspacePanel from './components/WorkspacePanel';
 import usePinnedScroll from './hooks/usePinnedScroll';
@@ -48,6 +50,18 @@ function normalizeActivity(event) {
       summary: payload.message || payload.phase || event.type.replace('agent.', ''),
       arguments: payload,
       status: event.type.endsWith('completed') ? 'completed' : 'started',
+      timestamp: event.timestamp,
+    };
+  }
+  if (event.type?.startsWith('skill.') || event.type?.startsWith('skills.') || event.type?.startsWith('context.')) {
+    const completed = event.type.endsWith('completed') || event.type.endsWith('activated') || event.type.endsWith('changed');
+    return {
+      id: `${event.type}-${payload.inspection_id || payload.skill || payload.root || event.seq}`,
+      tool: event.type.startsWith('context.') ? 'project_context' : 'skill',
+      title: event.type.startsWith('context.') ? 'Project context' : 'Agent skill',
+      summary: payload.skill || payload.action || event.type,
+      arguments: payload,
+      status: completed ? 'completed' : 'started',
       timestamp: event.timestamp,
     };
   }
@@ -99,6 +113,9 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [memory, setMemory] = useState([]);
+  const [skills, setSkills] = useState({ skills: [] });
+  const [projectContext, setProjectContext] = useState(null);
+  const [intelligenceLoading, setIntelligenceLoading] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -164,6 +181,22 @@ export default function App() {
     setSessions(data);
   }, []);
 
+  const refreshIntelligence = useCallback(async ({ refreshIndex = false } = {}) => {
+    setIntelligenceLoading(true);
+    try {
+      const [skillData, contextData] = await Promise.all([
+        api('/api/skills'),
+        api(`/api/project-context${refreshIndex ? '?refresh=true' : ''}`),
+      ]);
+      setSkills(skillData || { skills: [] });
+      setProjectContext(contextData || null);
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      setIntelligenceLoading(false);
+    }
+  }, [showError]);
+
   const applySession = useCallback((record) => {
     if (!record) return;
     const changed = sessionIdRef.current !== record.session_id;
@@ -198,6 +231,8 @@ export default function App() {
         setSessions(data.sessions || []);
         setWorkspace(data.workspace);
         setMemory(data.memory || []);
+        setSkills(data.skills || { skills: [] });
+        setProjectContext(data.project_context || null);
         setApprovals(data.pending_approvals || []);
         setBusy(Boolean(data.worker_busy));
         if (data.worker_busy) setPhase('thinking');
@@ -218,6 +253,7 @@ export default function App() {
       if (event.type === 'session.opened') {
         applySession(payload.session);
         refreshSessions(searchRef.current).catch((err) => showError(err.message));
+        refreshIntelligence().catch(() => {});
       } else if (event.type === 'chat.accepted') {
         setBusy(true);
         setPhase('thinking');
@@ -257,6 +293,9 @@ export default function App() {
         setWorkspace(payload.workspace);
         setSelectedFile(null);
         refreshTree();
+        refreshIntelligence().catch(() => {});
+      } else if (['skills.changed', 'skill.activated', 'context.index.completed'].includes(event.type)) {
+        refreshIntelligence().catch(() => {});
       } else if (event.type === 'memory.changed') {
         setMemory(payload.entries || []);
       } else if (event.type === 'socket.protocol_error') {
@@ -319,7 +358,7 @@ export default function App() {
       socket.close();
       socketRef.current = null;
     };
-  }, [applySession, refreshSessions, refreshTree, showError, syncCurrentSession]);
+  }, [applySession, refreshIntelligence, refreshSessions, refreshTree, showError, syncCurrentSession]);
 
   useEffect(() => {
     searchRef.current = search;
@@ -420,7 +459,8 @@ export default function App() {
       setSidebarOpen(false);
       setSelectedFile(null);
       await refreshTree();
-      showNotice('Çalışma alanı güncellendi.');
+      await refreshIntelligence({ refreshIndex: true });
+      showNotice('Çalışma alanı ve proje bağlamı güncellendi.');
     } catch (err) {
       showError(err.message);
     }
@@ -577,12 +617,13 @@ export default function App() {
           <div className="inspector-tabs">
             <button type="button" className={inspectorTab === 'activity' ? 'active' : ''} onClick={() => setInspectorTab('activity')}><Activity size={15} />Activity</button>
             <button type="button" className={inspectorTab === 'files' ? 'active' : ''} onClick={() => setInspectorTab('files')}><Files size={15} />Files</button>
+            <button type="button" className={inspectorTab === 'skills' ? 'active' : ''} onClick={() => setInspectorTab('skills')}><Puzzle size={15} />Skills</button>
             <button type="button" onClick={() => setActivities([])} title="Aktivite geçmişini temizle" aria-label="Aktivite geçmişini temizle"><RotateCcw size={15} /></button>
             <button type="button" className="inspector-close" onClick={() => setInspectorOpen(false)} title="Inspector panelini kapat" aria-label="Inspector panelini kapat"><PanelRightClose size={15} /></button>
           </div>
           {inspectorTab === 'activity' ? (
             <ActivityPanel activities={activities} phase={phase} connected={connected} />
-          ) : (
+          ) : inspectorTab === 'files' ? (
             <WorkspacePanel
               tree={tree}
               selectedFile={selectedFile}
@@ -590,6 +631,13 @@ export default function App() {
               fileLoading={fileLoading}
               onRefresh={refreshTree}
               onOpenFile={openFile}
+            />
+          ) : (
+            <SkillsPanel
+              skills={skills}
+              projectContext={projectContext}
+              loading={intelligenceLoading}
+              onRefresh={() => refreshIntelligence({ refreshIndex: true })}
             />
           )}
         </aside>

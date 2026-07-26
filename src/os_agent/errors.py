@@ -44,3 +44,19 @@ class ToolLoopError(ToolError):
 
 class WorkspaceError(ToolError):
     pass
+
+
+class ProjectContextError(ToolError):
+    pass
+
+
+class SkillError(ToolError):
+    pass
+
+
+class SkillValidationError(SkillError):
+    pass
+
+
+class SkillInstallError(SkillError):
+    pass

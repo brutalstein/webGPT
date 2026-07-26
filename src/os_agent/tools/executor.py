@@ -34,12 +34,14 @@ class ToolExecutor:
         policy: ToolPolicy,
         audit: ToolAuditLog,
         settings: dict[str, Any],
+        services: dict[str, Any] | None = None,
     ):
         self.registry = registry
         self.workspace = workspace
         self.policy = policy
         self.audit = audit
         self.settings = settings
+        self.services = services or {}
         self.approval_handler: ApprovalHandler | None = None
         self.activity_handler: ActivityHandler | None = None
         self._session_approvals: set[str] = set()
@@ -96,8 +98,18 @@ class ToolExecutor:
                     "tool.started",
                     {"call_id": call.call_id, "tool": call.name, "title": definition.title, "summary": summary},
                 )
-            context = ToolContext(workspace=self.workspace, settings=self.settings, session_id=session_id)
+            context = ToolContext(
+                workspace=self.workspace,
+                settings=self.settings,
+                session_id=session_id,
+                services=self.services,
+            )
             payload = tool.execute(context, call.arguments)
+            if definition.risk.value in {"write", "execute"}:
+                context_engine = self.services.get("project_context")
+                mark_dirty = getattr(context_engine, "mark_dirty", None)
+                if callable(mark_dirty):
+                    mark_dirty()
             duration = int((time.monotonic() - started) * 1000)
             content_limit = max(1000, int(self.settings.get("max_tool_result_chars", 24000)))
             content = payload.content

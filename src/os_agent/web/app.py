@@ -135,6 +135,8 @@ def create_web_app(context: WebAppContext) -> FastAPI:
             "sessions": [_serialize_session(item) for item in sessions],
             "memory": context.memory.list_entries(),
             "tools": context.tools.status().get("tools", []),
+            "project_context": context.tools.project_context.status(refresh=False),
+            "skills": context.tools.skills.status(session_id=context.worker.current_session_id),
             "database_health": context.database.quick_check(),
             "pending_approvals": context.approval.snapshot(),
             "worker_busy": context.worker.busy,
@@ -176,6 +178,7 @@ def create_web_app(context: WebAppContext) -> FastAPI:
             selected = await asyncio.to_thread(context.tools.workspace.select, path, source="web_path")
         except OSErrorBase as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        context.tools.workspace_changed()
         result = context.workspace.status()
         context.hub.publish("workspace.changed", {"root": str(selected), "workspace": result})
         return result
@@ -188,6 +191,7 @@ def create_web_app(context: WebAppContext) -> FastAPI:
         if selected is None:
             return Response(status_code=204)
         resolved = await asyncio.to_thread(context.tools.workspace.select, selected, source="web_picker")
+        context.tools.workspace_changed()
         result = context.workspace.status()
         context.hub.publish("workspace.changed", {"root": str(resolved), "workspace": result})
         return result
@@ -217,6 +221,25 @@ def create_web_app(context: WebAppContext) -> FastAPI:
             return await asyncio.to_thread(context.workspace.read_file, path)
         except OSErrorBase as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/project-context")
+    async def project_context_status(request: Request, refresh: bool = False):
+        _require_auth(request, context)
+        if refresh:
+            return await asyncio.to_thread(context.tools.project_context.refresh, force=True)
+        return context.tools.project_context.status(refresh=False)
+
+    @app.get("/api/skills")
+    async def list_skills(request: Request):
+        _require_auth(request, context)
+        return context.tools.skills.status(session_id=context.worker.current_session_id)
+
+    @app.post("/api/skills/refresh")
+    async def refresh_skills(request: Request):
+        _require_auth(request, context)
+        skills = await asyncio.to_thread(context.tools.skills.refresh)
+        context.hub.publish("skills.changed", {"action": "refreshed", "skills": skills})
+        return context.tools.skills.status(session_id=context.worker.current_session_id)
 
     @app.get("/api/memory")
     async def list_memory(request: Request):

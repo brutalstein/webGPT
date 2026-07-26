@@ -41,11 +41,17 @@ class AgentWorker:
         self._state_lock = threading.RLock()
         self._busy = False
         self._closed = False
+        self._session_id: str | None = None
 
     @property
     def busy(self) -> bool:
         with self._state_lock:
             return self._busy
+
+    @property
+    def current_session_id(self) -> str | None:
+        with self._state_lock:
+            return self._session_id
 
     def _ensure_orchestrator(self) -> Orchestrator:
         if self._orchestrator is None:
@@ -77,6 +83,8 @@ class AgentWorker:
         orchestrator = self._ensure_orchestrator()
         orchestrator.switch_provider("gemini")
         session_id = orchestrator.new_session()
+        with self._state_lock:
+            self._session_id = session_id
         record = self.sessions.get(session_id)
         assert record is not None
         self._publish("session.opened", {"session": record, "new": True})
@@ -93,6 +101,8 @@ class AgentWorker:
             raise ProviderError("Web çalışma alanı şu an yalnızca Gemini oturumlarını açar.")
         orchestrator = self._ensure_orchestrator()
         orchestrator.resume_session(session_id)
+        with self._state_lock:
+            self._session_id = session_id
         refreshed = self.sessions.get(session_id)
         assert refreshed is not None
         self._publish("session.opened", {"session": refreshed, "new": False})

@@ -1,5 +1,15 @@
 # Değişiklik Günlüğü
 
+## 0.8.0
+
+- Artımlı proje bağlam motoru ve path-boosted BM25 retrieval eklendi.
+- Git-aware dosya keşfi, gzip cache, değişmeyen chunk yeniden kullanımı ve otomatik context injection eklendi.
+- Agent Skills uyumlu progressive-disclosure skill kataloğu eklendi.
+- Public GitHub kaynakları için iki aşamalı karantina, provenance, lisans ve statik risk incelemesi eklendi.
+- Global ve güvenilen proje skill alanları, skill aktivasyonu ve on-demand resource okuma eklendi.
+- Skills/Context web inspector sekmesi ve CLI durum komutları eklendi.
+- İndirilen scriptlerin otomatik çalıştırılması açıkça kapatıldı.
+
 ## 0.7.0
 
 - Yerelde çalışan React/Vite coding-agent çalışma alanı eklendi.

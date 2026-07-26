@@ -73,7 +73,12 @@ class WebAppSmokeTests(unittest.TestCase):
                     self.assertIn(security.cookie_name, client.cookies)
                     response = client.get("/api/bootstrap")
                     self.assertEqual(response.status_code, 200)
-                    self.assertEqual(response.json()["app"]["provider"], "gemini")
+                    payload = response.json()
+                    self.assertEqual(payload["app"]["provider"], "gemini")
+                    self.assertIn("skills", payload)
+                    self.assertIn("project_context", payload)
+                    self.assertEqual(client.get("/api/skills").status_code, 200)
+                    self.assertEqual(client.get("/api/project-context").status_code, 200)
                     self.assertEqual(client.get(f"/auth/{security.auth_token}").status_code, 404)
             finally:
                 if worker is not None:
@@ -84,3 +89,11 @@ class WebAppSmokeTests(unittest.TestCase):
                     os.environ.pop("LOCALAPPDATA", None)
                 else:
                     os.environ["LOCALAPPDATA"] = previous
+
+    def test_context_refresh_is_forced_and_skills_use_current_session(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "src/os_agent/web/app.py").read_text(encoding="utf-8")
+        worker = (root / "src/os_agent/web/worker.py").read_text(encoding="utf-8")
+        self.assertIn("project_context.refresh, force=True", source)
+        self.assertIn("session_id=context.worker.current_session_id", source)
+        self.assertIn("def current_session_id", worker)

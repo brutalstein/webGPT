@@ -46,6 +46,8 @@ class AppConfig:
     storage: dict[str, Any]
     cli: dict[str, Any]
     web: dict[str, Any] = field(default_factory=dict)
+    project_context: dict[str, Any] = field(default_factory=dict)
+    skills: dict[str, Any] = field(default_factory=dict)
 
     @property
     def data_dir(self) -> Path:
@@ -102,6 +104,8 @@ class AppConfig:
             "storage": dict(self.storage),
             "local_tools": dict(self.local_tools),
             "web": dict(self.web),
+            "project_context": dict(self.project_context),
+            "skills": dict(self.skills),
         }
 
 
@@ -157,6 +161,8 @@ def load_config(path: Path) -> AppConfig:
         storage=dict(raw.get("storage", {})),
         cli=dict(raw.get("cli", {})),
         web=dict(raw.get("web", {})),
+        project_context=dict(raw.get("project_context", {})),
+        skills=dict(raw.get("skills", {})),
     )
     config.state_dir.mkdir(parents=True, exist_ok=True)
     config.logs_dir.mkdir(parents=True, exist_ok=True)

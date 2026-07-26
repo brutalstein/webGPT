@@ -29,3 +29,17 @@
   - https://vite.dev/blog/announcing-vite8
 - FastAPI WebSocket
   - https://fastapi.tiangolo.com/advanced/websockets/
+
+## Project context and skills
+
+- Agent Skills specification and SKILL.md format
+  - https://agentskills.io/specification
+- Agent Skills client implementation and progressive disclosure
+  - https://agentskills.io/client-implementation/adding-skills-support
+- MCP tool safety and human approval guidance
+  - https://modelcontextprotocol.io/specification/2025-11-25/server/tools
+- GitHub repository archive and commit pinning documentation
+  - https://docs.github.com/en/rest/repos/contents
+  - https://docs.github.com/en/repositories/working-with-files/using-files/downloading-source-code-archives
+- BM25 reference
+  - Robertson, S. and Zaragoza, H. The Probabilistic Relevance Framework: BM25 and Beyond.

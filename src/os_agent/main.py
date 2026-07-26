@@ -34,6 +34,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace", metavar="KLASÖR", help="Bu çalıştırma için yerel çalışma alanını seçer ve kaydeder")
     parser.add_argument("--select-workspace", action="store_true", help="Grafik klasör seçiciyle çalışma alanını belirler")
     parser.add_argument("--workspace-info", action="store_true", help="Kayıtlı çalışma alanı ve araç durumunu gösterir")
+    parser.add_argument("--refresh-context", action="store_true", help="Proje bağlam indeksini zorla yeniler")
+    parser.add_argument("--skills", action="store_true", help="Kurulu skill kataloğunu ve güven durumunu gösterir")
     parser.add_argument("--web", action="store_true", help="Yerel React web arayüzünü başlatır")
     return parser.parse_args()
 
@@ -115,6 +117,7 @@ def configure_workspace(
 ) -> int | None:
     if args.workspace:
         selected = runtime.workspace.select(args.workspace, source="cli_argument")
+        runtime.workspace_changed()
         console.print(f"[green]Çalışma alanı seçildi:[/green] {selected}")
     if args.select_workspace:
         selected = choose_workspace(runtime.workspace.root or Path.cwd())
@@ -122,7 +125,14 @@ def configure_workspace(
             console.print("[yellow]Çalışma alanı seçimi iptal edildi.[/yellow]")
             return 1
         resolved = runtime.workspace.select(selected, source="folder_picker")
+        runtime.workspace_changed()
         console.print(f"[green]Çalışma alanı seçildi:[/green] {resolved}")
+        return 0
+    if args.refresh_context:
+        console.print_json(json.dumps(runtime.project_context.refresh(force=True), ensure_ascii=False))
+        return 0
+    if args.skills:
+        console.print_json(json.dumps(runtime.skills.status(), ensure_ascii=False))
         return 0
     if args.workspace_info:
         console.print_json(json.dumps(runtime.status(), ensure_ascii=False))

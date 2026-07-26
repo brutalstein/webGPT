@@ -31,6 +31,7 @@ def dependencies_ready() -> bool:
         import rich  # noqa: F401
         import fastapi  # noqa: F401
         import uvicorn  # noqa: F401
+        import yaml  # noqa: F401
     except ImportError:
         return False
     return HASH_FILE.exists() and HASH_FILE.read_text(encoding="utf-8").strip() == file_hash(REQUIREMENTS)

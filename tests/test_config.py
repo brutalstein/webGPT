@@ -28,6 +28,9 @@ class ConfigTests(unittest.TestCase):
             self.assertTrue(config.providers["chatgpt"].enabled)
             self.assertFalse(config.inject_local_memory)
             self.assertEqual(config.database_path.name, "os-state.db")
+            self.assertTrue(config.project_context["enabled"])
+            self.assertTrue(config.skills["enabled"])
+            self.assertIn("activate_skill", config.local_tools["allowed_tools"])
 
     def test_disabled_provider_is_not_selectable(self):
         raw = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
