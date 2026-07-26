@@ -11,14 +11,8 @@ from playwright.sync_api import Error as PlaywrightError, Locator, Page, Timeout
 
 from ...errors import ProviderError
 from .config import GeminiChromeSettings
-from .selectors import (
-    INPUT_SELECTORS,
-    NEW_CHAT_NAMES,
-    RESPONSE_SELECTORS,
-    SEND_BUTTON_SELECTORS,
-    STOP_BUTTON_SELECTORS,
-)
-from .utils import body_text, click_by_names, first_visible, locator_text, wait_for_visible
+from .selector_health import SelectorHealthMonitor
+from .utils import body_text, click_by_names, first_visible, locator_text
 
 
 class GeminiClient:
@@ -39,18 +33,48 @@ class GeminiClient:
 
     def __init__(self, settings: GeminiChromeSettings, page: Page):
         self.settings = settings
-        self.page = page
+        self._page = page
         self.is_thinking = False
         self.animation_thread: Optional[threading.Thread] = None
         self._event_handler: Callable[[str, dict[str, Any]], None] | None = None
         self._cancel_event = threading.Event()
         self.last_cancelled = False
+        self._selector_winners: dict[str, str] = {}
+        self.selector_health = SelectorHealthMonitor(
+            page,
+            settings.selector_registry,
+            settings.selector_health,
+            settings.log_dir,
+            self._emit,
+        )
 
     def set_event_handler(self, handler: Callable[[str, dict[str, Any]], None] | None) -> None:
         self._event_handler = handler
 
     def request_cancel(self) -> None:
         self._cancel_event.set()
+
+    @property
+    def page(self) -> Page:
+        return self._page
+
+    @page.setter
+    def page(self, page: Page) -> None:
+        self._page = page
+        if hasattr(self, "_selector_winners"):
+            self._selector_winners.clear()
+        if hasattr(self, "selector_health"):
+            self.selector_health = SelectorHealthMonitor(
+                page,
+                self.settings.selector_registry,
+                self.settings.selector_health,
+                self.settings.log_dir,
+                self._emit,
+            )
+
+    def attach_page(self, page: Page) -> None:
+        """Yeni Playwright page nesnesini selector cache'ini taşımadan bağlar."""
+        self.page = page
 
     def _emit(self, event_type: str, payload: dict[str, Any] | None = None) -> None:
         if self._event_handler is None:
@@ -59,6 +83,142 @@ class GeminiClient:
             self._event_handler(event_type, payload or {})
         except Exception:
             pass
+
+    def _ordered_selectors(self, group: str) -> tuple[str, ...]:
+        chain = self.settings.selector_registry.chain(group)
+        return chain.ordered(self._selector_winners.get(group))
+
+    def _find_by_chain(self, group: str) -> Optional[Locator]:
+        chain = self.settings.selector_registry.chain(group)
+        for selector in chain.ordered(self._selector_winners.get(group)):
+            try:
+                item = first_visible(self.page.locator(selector))
+            except PlaywrightError:
+                item = None
+            if item is None:
+                continue
+            self._selector_winners[group] = selector
+            self.selector_health.observe(
+                group,
+                selector,
+                strategy="css",
+                index=chain.candidates.index(selector),
+            )
+            return item
+        return None
+
+    @staticmethod
+    def _label_pattern(label: str, *, exact: bool = False) -> re.Pattern[str]:
+        escaped = re.escape(label.strip())
+        return re.compile(rf"^{escaped}$" if exact else escaped, re.IGNORECASE)
+
+    def _find_named_role(
+        self,
+        role: str,
+        labels: tuple[str, ...],
+        *,
+        exact: bool = False,
+    ) -> Optional[Locator]:
+        for label in labels:
+            if not label.strip():
+                continue
+            try:
+                item = first_visible(
+                    self.page.get_by_role(role, name=self._label_pattern(label, exact=exact))
+                )
+            except PlaywrightError:
+                item = None
+            if item is not None:
+                return item
+        return None
+
+    @staticmethod
+    def _is_editable_candidate(item: Locator) -> bool:
+        try:
+            if item.is_editable():
+                return True
+        except PlaywrightError:
+            pass
+        try:
+            return bool(
+                item.evaluate(
+                    "node => Boolean(node && (node.isContentEditable || "
+                    "node.tagName === 'TEXTAREA' || "
+                    "(node.tagName === 'INPUT' && !['button','checkbox','radio','submit'].includes("
+                    "String(node.type || '').toLowerCase()))))"
+                )
+            )
+        except PlaywrightError:
+            return False
+
+    def _first_editable(self, locator: Locator, limit: int = 12) -> Optional[Locator]:
+        try:
+            count = min(locator.count(), limit)
+        except PlaywrightError:
+            return None
+        for index in range(count):
+            item = locator.nth(index)
+            try:
+                if item.is_visible() and self._is_editable_candidate(item):
+                    return item
+            except PlaywrightError:
+                continue
+        return None
+
+    def _find_input_box_once(self) -> Optional[Locator]:
+        item = self._find_by_chain("input")
+        if item is not None:
+            return item
+
+        for label in self.settings.ui_labels.input:
+            pattern = self._label_pattern(label)
+            semantic_locators = (
+                self.page.get_by_role("textbox", name=pattern),
+                self.page.get_by_label(pattern),
+                self.page.get_by_placeholder(pattern),
+            )
+            for locator in semantic_locators:
+                item = self._first_editable(locator)
+                if item is not None:
+                    self.selector_health.observe(
+                        "input",
+                        f"semantic:{label}",
+                        strategy="accessible-name",
+                    )
+                    return item
+
+        item = self._first_editable(self.page.get_by_role("textbox"))
+        if item is not None:
+            self.selector_health.observe(
+                "input",
+                "semantic:role=textbox",
+                strategy="accessible-role",
+            )
+        return item
+
+    def _wait_for_input_box(self, timeout_ms: int) -> Optional[Locator]:
+        deadline = time.monotonic() + max(0, timeout_ms) / 1_000
+        while time.monotonic() < deadline:
+            if self.page.is_closed():
+                return None
+            item = self._find_input_box_once()
+            if item is not None:
+                return item
+            time.sleep(0.15)
+        return None
+
+    def _find_action_button(self, group: str, labels: tuple[str, ...]) -> Optional[Locator]:
+        item = self._find_by_chain(group)
+        if item is not None:
+            return item
+        item = self._find_named_role("button", labels)
+        if item is not None:
+            self.selector_health.observe(
+                group,
+                "semantic:role=button",
+                strategy="accessible-name",
+            )
+        return item
 
     def open(self) -> None:
         print("  -> Gemini açılıyor...")
@@ -85,8 +245,10 @@ class GeminiClient:
             if self.page.is_closed():
                 raise ProviderError("Gemini sekmesi kapatıldı.")
 
-            input_box = wait_for_visible(self.page, INPUT_SELECTORS, timeout_ms=1_000)
+            input_box = self._wait_for_input_box(timeout_ms=1_000)
             if input_box is not None:
+                self.selector_health.install(force=False)
+                self.selector_health.maybe_probe("ready", force=True)
                 return input_box
 
             state = self.detect_page_state()
@@ -139,12 +301,12 @@ class GeminiClient:
             )
         ):
             return "consent_or_interstitial"
-        if wait_for_visible(self.page, INPUT_SELECTORS, timeout_ms=250) is not None:
+        if self._wait_for_input_box(timeout_ms=250) is not None:
             return "ready"
         return "unknown"
 
     def _click_retry_if_present(self) -> None:
-        for name in ("Tekrar dene", "Try again", "Yeniden dene"):
+        for name in self.settings.ui_labels.retry:
             try:
                 button = first_visible(self.page.get_by_role("button", name=re.compile(name, re.IGNORECASE)))
                 if button is not None:
@@ -155,55 +317,76 @@ class GeminiClient:
                 pass
 
     def start_new_chat(self) -> bool:
-        clicked = click_by_names(self.page, NEW_CHAT_NAMES, timeout_ms=5_000)
+        clicked = click_by_names(self.page, self.settings.ui_labels.new_chat, timeout_ms=5_000)
         if clicked:
             time.sleep(0.8)
         return clicked
 
     def ensure_model_selected(self) -> bool:
         target = self.settings.preferred_model.strip()
-        if not target or target.casefold() in {"hesap varsayılanı", "default"}:
+        policy = self.settings.model_policy
+        if policy.is_default(target):
             return True
         if self._visible_model_button_contains(target):
             return True
 
         button = self._find_model_button()
         if button is None:
+            self.selector_health.record_failure("model_button", "Model seçici bulunamadı")
             return False
         try:
             button.click()
             time.sleep(0.5)
         except PlaywrightError:
+            self.selector_health.record_failure("model_button", "Model seçici açılamadı")
             return False
 
-        patterns = [target]
-        if target.casefold() == "3.1 pro":
-            patterns.extend(("Gemini 3.1 Pro", "3.1 Pro", "Pro"))
-
-        for text in patterns:
-            regex = re.compile(re.escape(text), re.IGNORECASE)
-            for role in ("menuitem", "option", "button"):
+        selected = False
+        for text in policy.labels_for(target):
+            regex = self._label_pattern(text)
+            for role in policy.option_roles:
                 try:
                     candidate = first_visible(self.page.get_by_role(role, name=regex))
-                    if candidate is not None:
-                        candidate.click()
-                        time.sleep(0.8)
-                        return True
+                except PlaywrightError:
+                    candidate = None
+                if candidate is None:
+                    continue
+                try:
+                    candidate.click()
+                    selected = True
+                    break
+                except PlaywrightError:
+                    continue
+            if selected:
+                break
+            try:
+                candidate = first_visible(self.page.get_by_text(regex, exact=False))
+            except PlaywrightError:
+                candidate = None
+            if candidate is not None:
+                try:
+                    candidate.click()
+                    selected = True
+                    break
                 except PlaywrightError:
                     pass
-            try:
-                candidate = first_visible(self.page.get_by_text(regex))
-                if candidate is not None:
-                    candidate.click()
-                    time.sleep(0.8)
+
+        if selected:
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                if self._visible_model_button_contains(target):
+                    self.selector_health.maybe_probe("model-selected", force=True)
                     return True
-            except PlaywrightError:
-                pass
+                time.sleep(0.2)
 
         try:
             self.page.keyboard.press("Escape")
         except PlaywrightError:
             pass
+        self.selector_health.record_failure(
+            "model_button",
+            f"Yapılandırılmış model etiketleri eşleşmedi: {target}",
+        )
         return False
 
     def current_model_text(self) -> str:
@@ -217,17 +400,18 @@ class GeminiClient:
 
         self._cancel_event.clear()
         self.last_cancelled = False
+        self.selector_health.maybe_probe("before-prompt")
         self._wait_until_previous_generation_finishes(timeout_s=30)
         if not self.ensure_model_selected() and self.settings.strict_model_check:
             raise ProviderError(f"{self.settings.preferred_model} seçilemedi; mesaj gönderilmedi.")
 
-        input_box = wait_for_visible(
-            self.page,
-            INPUT_SELECTORS,
+        input_box = self._wait_for_input_box(
             timeout_ms=self.settings.page_timeout_seconds * 1_000,
         )
         if input_box is None:
             state = self.detect_page_state()
+            self.selector_health.record_failure("input", f"Mesaj kutusu bulunamadı: {state}")
+            self.selector_health.maybe_probe("input-missing", force=True)
             raise ProviderError(f"Gemini mesaj kutusu bulunamadı. Sayfa durumu: {state}")
 
         baselines = self._capture_response_baselines()
@@ -250,28 +434,31 @@ class GeminiClient:
             return text
         finally:
             self._stop_animation()
+            self.selector_health.maybe_probe("after-response")
 
     def _find_model_button(self) -> Optional[Locator]:
-        selectors = (
-            'button[aria-label*="model" i]',
-            'button[data-test-id*="model" i]',
-            'button:has-text("3.1 Pro")',
-            'button:has-text("Pro")',
-            'button:has-text("Flash")',
+        item = self._find_by_chain("model_button")
+        if item is not None:
+            return item
+        labels = (
+            *self.settings.model_policy.button_names,
+            *self.settings.model_policy.labels_for(self.settings.preferred_model),
+            *self.settings.model_policy.all_labels(),
         )
-        for selector in selectors:
-            item = first_visible(self.page.locator(selector))
-            if item is not None:
-                return item
-        return None
+        item = self._find_named_role("button", tuple(dict.fromkeys(labels)))
+        if item is not None:
+            self.selector_health.observe(
+                "model_button",
+                "semantic:role=button",
+                strategy="accessible-name",
+            )
+        return item
 
     def _visible_model_button_contains(self, target: str) -> bool:
         button = self._find_model_button()
         if button is None:
             return False
-        text = locator_text(button).casefold()
-        target_folded = target.casefold()
-        return target_folded in text or (target_folded == "3.1 pro" and "pro" in text)
+        return self.settings.model_policy.matches(locator_text(button), target)
 
     def _write_prompt(self, input_box: Locator, prompt: str) -> None:
         input_box.scroll_into_view_if_needed()
@@ -290,16 +477,21 @@ class GeminiClient:
         input_box.press("Enter")
         time.sleep(0.8)
         if locator_text(input_box).strip():
-            for selector in SEND_BUTTON_SELECTORS:
-                button = first_visible(self.page.locator(selector))
-                if button is not None and button.is_enabled():
-                    button.click()
-                    return
+            button = self._find_action_button("send_button", self.settings.ui_labels.send)
+            if button is not None:
+                try:
+                    if button.is_enabled():
+                        button.click()
+                        return
+                except PlaywrightError:
+                    pass
+            self.selector_health.record_failure("send_button", "Gönder düğmesi bulunamadı")
+            self.selector_health.maybe_probe("send-missing", force=True)
             raise ProviderError("Gemini gönder düğmesi bulunamadı.")
 
     def _capture_response_baselines(self) -> dict[str, tuple[int, str]]:
         result: dict[str, tuple[int, str]] = {}
-        for selector in RESPONSE_SELECTORS:
+        for selector in self.settings.selector_registry.candidates("response"):
             locator = self.page.locator(selector)
             count = locator.count()
             last_text = locator_text(locator.nth(count - 1)).strip() if count else ""
@@ -315,21 +507,33 @@ class GeminiClient:
                 raise ProviderError("Gemini isteği kullanıcı tarafından durduruldu.")
             if self.page.is_closed():
                 raise ProviderError("Yanıt beklenirken Gemini sekmesi kapandı.")
-            for selector in RESPONSE_SELECTORS:
+            for selector in self._ordered_selectors("response"):
                 locator = self.page.locator(selector)
                 count = locator.count()
-                old_count, old_text = baselines[selector]
+                old_count, old_text = baselines.get(selector, (0, ""))
                 if count > old_count:
+                    self._selector_winners["response"] = selector
+                    self.selector_health.observe(
+                        "response", selector, strategy="css",
+                        index=self.settings.selector_registry.chain("response").candidates.index(selector),
+                    )
                     return locator.nth(count - 1)
                 if count:
                     candidate = locator.nth(count - 1)
                     current = locator_text(candidate).strip()
                     if current and current != old_text:
+                        self._selector_winners["response"] = selector
+                        self.selector_health.observe(
+                            "response", selector, strategy="css",
+                            index=self.settings.selector_registry.chain("response").candidates.index(selector),
+                        )
                         return candidate
             state = self.detect_page_state()
             if state in {"blocked_signin", "login_required"}:
                 raise ProviderError("Gemini oturumu mesaj gönderilirken sona erdi. Kurulum ve bakım menüsünden Google hesabı kurulumunu yenile.")
             time.sleep(0.25)
+        self.selector_health.record_failure("response", "Yeni yanıt elementi bulunamadı")
+        self.selector_health.maybe_probe("response-missing", force=True)
         raise ProviderError("Yeni Gemini yanıtı 60 saniye içinde başlamadı.")
 
     def _wait_for_response_to_stabilize(self, response: Locator, timeout_s: int) -> str:
@@ -373,20 +577,19 @@ class GeminiClient:
         raise ProviderError("Önceki Gemini yanıtı hâlâ oluşturuluyor.")
 
     def _is_generating(self) -> bool:
-        for selector in STOP_BUTTON_SELECTORS:
-            if first_visible(self.page.locator(selector)) is not None:
-                return True
-        return False
+        return self._find_action_button("stop_button", self.settings.ui_labels.stop) is not None
 
     def _stop_generation_if_present(self) -> None:
-        for selector in STOP_BUTTON_SELECTORS:
-            try:
-                button = first_visible(self.page.locator(selector))
-                if button is not None:
-                    button.click(timeout=2_000)
-                    return
-            except PlaywrightError:
-                continue
+        button = self._find_action_button("stop_button", self.settings.ui_labels.stop)
+        if button is None:
+            return
+        try:
+            button.click(timeout=2_000)
+        except PlaywrightError:
+            pass
+
+    def selector_health_status(self) -> dict[str, Any]:
+        return self.selector_health.status()
 
     @staticmethod
     def _clean_response(text: str) -> str:

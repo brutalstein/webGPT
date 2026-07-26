@@ -5,6 +5,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ...config import AppConfig, ProviderSettings
+from ...errors import ConfigurationError
+from .selectors import (
+    ModelSelectionPolicy,
+    SelectorHealthPolicy,
+    SelectorRegistry,
+    UiLabelPolicy,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +29,10 @@ class GeminiChromeSettings:
     stable_seconds: float
     cdp_start_retries: int
     cdp_port_timeout_seconds: int
+    selector_registry: SelectorRegistry
+    model_policy: ModelSelectionPolicy
+    ui_labels: UiLabelPolicy
+    selector_health: SelectorHealthPolicy
     language: str
     app_data_dir: Path
     os_profile_dir: Path
@@ -34,6 +45,14 @@ class GeminiChromeSettings:
         settings: ProviderSettings,
     ) -> "GeminiChromeSettings":
         provider_dir = app_config.data_dir / "providers" / "gemini"
+        try:
+            selector_registry = SelectorRegistry.from_config(settings.get("selector_contract", {}))
+            model_policy = ModelSelectionPolicy.from_config(settings.get("model_ui", {}))
+            ui_labels = UiLabelPolicy.from_config(settings.get("ui_labels", {}))
+            selector_health = SelectorHealthPolicy.from_config(settings.get("selector_health", {}))
+        except (TypeError, ValueError) as exc:
+            raise ConfigurationError(f"Gemini selector yapılandırması geçersiz: {exc}") from exc
+
         return cls(
             expected_email=settings.expected_email,
             preferred_model=settings.preferred_model,
@@ -48,6 +67,10 @@ class GeminiChromeSettings:
             stable_seconds=max(2.0, float(settings.get("stable_seconds", 5.0))),
             cdp_start_retries=max(1, int(settings.get("cdp_start_retries", 3))),
             cdp_port_timeout_seconds=max(5, int(settings.get("cdp_port_timeout_seconds", 20))),
+            selector_registry=selector_registry,
+            model_policy=model_policy,
+            ui_labels=ui_labels,
+            selector_health=selector_health,
             language=app_config.language,
             app_data_dir=provider_dir,
             os_profile_dir=app_config.data_dir / "browser-profiles" / "gemini-chrome",

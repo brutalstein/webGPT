@@ -1,0 +1,81 @@
+name: Gemini selector contract
+
+"on":
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
+  push:
+    paths:
+      - "config.json"
+      - "src/os_agent/providers/gemini_chrome/**"
+      - "tests/test_gemini_browser_safety.py"
+      - "tests/test_gemini_selector_registry.py"
+      - ".github/workflows/gemini-selector-health.yml"
+  pull_request:
+    paths:
+      - "config.json"
+      - "src/os_agent/providers/gemini_chrome/**"
+      - "tests/test_gemini_browser_safety.py"
+      - "tests/test_gemini_selector_registry.py"
+      - ".github/workflows/gemini-selector-health.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gemini-selector-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  selector-contract:
+    name: Selector contract and browser smoke
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: ${{ github.workspace }}\src
+      PYTHONUTF8: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        run: python -m playwright install chromium
+
+      - name: Compile selector runtime
+        run: >-
+          python -m compileall -q
+          src/os_agent/providers/gemini_chrome
+          tests/test_gemini_browser_safety.py
+          tests/test_gemini_selector_registry.py
+
+      - name: Run browser safety tests
+        run: python -m unittest discover -s tests -p "test_gemini_browser_safety.py" -v
+
+      - name: Run selector registry tests
+        run: python -m unittest discover -s tests -p "test_gemini_selector_registry.py" -v
+
+      - name: Validate selector contract in Chromium
+        run: >-
+          python -m os_agent.providers.gemini_chrome.selector_check
+          --config config.json
+          --browser-smoke
+          --output selector-contract-report.json
+
+      - name: Upload selector contract report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gemini-selector-contract-${{ github.run_id }}
+          path: selector-contract-report.json
+          if-no-files-found: warn
+          retention-days: 14

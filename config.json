@@ -35,7 +35,104 @@
       "launch_mode": "cdp",
       "fallback_to_persistent": true,
       "cdp_start_retries": 3,
-      "cdp_port_timeout_seconds": 20
+      "cdp_port_timeout_seconds": 20,
+      "selector_contract": {
+        "replace_defaults": true,
+        "chains": {
+          "input": [
+            "[data-test-id=\"input-area\"] rich-textarea div[contenteditable=\"true\"]",
+            "rich-textarea div[contenteditable=\"true\"]",
+            "rich-textarea [contenteditable=\"true\"]",
+            "div.ql-editor[contenteditable=\"true\"]",
+            "[contenteditable=\"true\"][role=\"textbox\"]",
+            "textarea[aria-label*=\"prompt\" i]",
+            "textarea[placeholder*=\"Gemini\" i]"
+          ],
+          "response": [
+            "model-response .message-content",
+            "model-response",
+            "[data-message-author-role=\"model\"]",
+            "[data-message-author-role=\"assistant\"]"
+          ],
+          "send_button": [
+            "button[data-test-id=\"send-button\"]",
+            "button[aria-label*=\"Send\" i]",
+            "button[aria-label*=\"Gönder\" i]"
+          ],
+          "stop_button": [
+            "button[data-test-id=\"stop-button\"]",
+            "button[aria-label*=\"Stop response\" i]",
+            "button[aria-label*=\"Stop generating\" i]",
+            "button[aria-label*=\"Yanıtı durdur\" i]",
+            "button[aria-label*=\"Oluşturmayı durdur\" i]"
+          ],
+          "model_button": [
+            "button[data-test-id=\"bard-mode-menu-button\"]",
+            ".model-picker-container button",
+            "button[data-test-id*=\"model\" i]",
+            "button[aria-label*=\"model\" i]",
+            "button[aria-haspopup=\"menu\"][aria-label*=\"Gemini\" i]"
+          ]
+        }
+      },
+      "model_ui": {
+        "default_names": [
+          "hesap varsayılanı",
+          "default",
+          "account default"
+        ],
+        "option_roles": [
+          "menuitem",
+          "option",
+          "button"
+        ],
+        "button_names": [
+          "model",
+          "Gemini model",
+          "model seç"
+        ],
+        "aliases": {
+          "3.1 Pro": [
+            "Gemini 3.1 Pro",
+            "3.1 Pro",
+            "Pro"
+          ]
+        }
+      },
+      "ui_labels": {
+        "input": [
+          "Enter a prompt here",
+          "Ask Gemini",
+          "Gemini'a sorun",
+          "İstem girin"
+        ],
+        "new_chat": [
+          "New chat",
+          "Yeni sohbet"
+        ],
+        "send": [
+          "Send",
+          "Gönder"
+        ],
+        "stop": [
+          "Stop response",
+          "Stop generating",
+          "Yanıtı durdur",
+          "Oluşturmayı durdur"
+        ],
+        "retry": [
+          "Try again",
+          "Tekrar dene",
+          "Yeniden dene"
+        ]
+      },
+      "selector_health": {
+        "enabled": true,
+        "interval_seconds": 60,
+        "read_interval_seconds": 15,
+        "failure_threshold": 3,
+        "report_interval_seconds": 300
+      }
     },
     "chatgpt": {
       "kind": "openai_responses_api",
