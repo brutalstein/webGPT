@@ -14,7 +14,7 @@ from ..config import AppConfig
 from ..core.memory_store import MemoryStore
 from ..core.session_store import SessionStore
 from ..core.storage import StateDatabase
-from ..errors import OSErrorBase
+from ..errors import OSErrorBase, ProviderError
 from ..tools import LocalToolRuntime
 from ..ui.workspace_picker import choose_workspace
 from .approval import WebApprovalHandler
@@ -162,6 +162,26 @@ def create_web_app(context: WebAppContext) -> FastAPI:
         if record is None or str(record.get("provider", "")).casefold() != "gemini":
             raise HTTPException(status_code=404, detail="Gemini oturumu bulunamadı.")
         return _serialize_session(record)
+
+    @app.delete("/api/sessions/{session_id}")
+    async def delete_session(session_id: str, request: Request):
+        _require_auth(request, context)
+        record = context.sessions.get(session_id)
+        if record is None or str(record.get("provider", "")).casefold() != "gemini":
+            raise HTTPException(status_code=404, detail="Gemini oturumu bulunamadı.")
+        if context.worker.busy:
+            raise HTTPException(status_code=409, detail="Gemini çalışırken konuşma silinemez.")
+        try:
+            result = await context.worker.delete_session(session_id)
+        except ProviderError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        limit = max(10, int(context.config.web.get("session_limit", 60)))
+        rows = context.sessions.list_recent(limit=limit, provider="gemini", include_turns=False)
+        return {
+            **result,
+            "next_session": _serialize_session(result["next_session"]) if result.get("next_session") else None,
+            "sessions": [_serialize_session(item) for item in rows],
+        }
 
     @app.get("/api/workspace")
     async def workspace_status(request: Request):

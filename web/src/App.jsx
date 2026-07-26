@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ActivityPanel from './components/ActivityPanel';
 import ApprovalModal from './components/ApprovalModal';
 import Composer from './components/Composer';
+import DeleteSessionModal from './components/DeleteSessionModal';
 import MarkdownMessage from './components/MarkdownMessage';
 import SettingsModal from './components/SettingsModal';
 import SkillsPanel from './components/SkillsPanel';
@@ -128,9 +129,12 @@ export default function App() {
   const [inspectorTab, setInspectorTab] = useState('activity');
   const [inspectorOpen, setInspectorOpen] = useState(() => window.matchMedia('(min-width: 1181px)').matches);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [socketStatus, setSocketStatus] = useState('connecting');
   const [search, setSearch] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deletingSessionId, setDeletingSessionId] = useState(null);
   const [memory, setMemory] = useState([]);
   const [skills, setSkills] = useState({ skills: [] });
   const [capabilities, setCapabilities] = useState({ capabilities: [] });
@@ -182,7 +186,10 @@ export default function App() {
   }, [notice]);
 
   useEffect(() => {
-    if (approvals.length > 0) setSettingsOpen(false);
+    if (approvals.length > 0) {
+      setSettingsOpen(false);
+      setDeleteTarget(null);
+    }
   }, [approvals.length]);
 
   useEffect(() => {
@@ -256,6 +263,16 @@ export default function App() {
       setActivities([]);
       setSelectedFile(null);
     }
+  }, []);
+
+  const clearSession = useCallback(() => {
+    sessionIdRef.current = null;
+    setSession(null);
+    setMessages([]);
+    setDraftResponse('');
+    setPhase('idle');
+    setActivities([]);
+    setSelectedFile(null);
   }, []);
 
   const syncCurrentSession = useCallback(async () => {
@@ -344,6 +361,12 @@ export default function App() {
         setApprovals((items) => [...items.filter((item) => item.approval_id !== payload.approval_id), payload]);
       } else if (['approval.resolved', 'approval.expired', 'approval.cancelled'].includes(event.type)) {
         setApprovals((items) => items.filter((item) => item.approval_id !== payload.approval_id));
+      } else if (event.type === 'session.deleted') {
+        setSessions((items) => items.filter((item) => item.session_id !== payload.session_id));
+        if (payload.session_id === sessionIdRef.current) {
+          if (payload.next_session) applySession(payload.next_session);
+          else clearSession();
+        }
       } else if (event.type === 'workspace.changed') {
         setWorkspace(payload.workspace);
         setSelectedFile(null);
@@ -418,7 +441,7 @@ export default function App() {
       socket.close();
       socketRef.current = null;
     };
-  }, [applySession, refreshIntelligence, refreshSessions, refreshTree, showError, syncCurrentSession]);
+  }, [applySession, clearSession, refreshIntelligence, refreshSessions, refreshTree, showError, syncCurrentSession]);
 
   useEffect(() => {
     searchRef.current = search;
@@ -473,7 +496,7 @@ export default function App() {
       setSidebarOpen(false);
       return;
     }
-    if (busy || sessionTransition) return;
+    if (busy || sessionTransition || deletingSessionId) return;
     if (!connected) {
       showError('Konuşma açmak için WebSocket bağlantısının kurulmasını bekle.');
       return;
@@ -488,6 +511,41 @@ export default function App() {
       showError(err.message);
     } finally {
       setSessionTransition(false);
+    }
+  };
+
+  const requestDeleteSession = (record) => {
+    if (!record || busy || sessionTransition || deletingSessionId || !connected) return;
+    setDeleteTarget(record);
+  };
+
+  const deleteSession = async () => {
+    const target = deleteTarget;
+    if (!target || busy || sessionTransition || deletingSessionId) return;
+    if (!connected) {
+      showError('Konuşmayı silmek için yerel bağlantının hazır olmasını bekle.');
+      return;
+    }
+    setError('');
+    setDeletingSessionId(target.session_id);
+    try {
+      const result = await api(`/api/sessions/${encodeURIComponent(target.session_id)}`, {
+        method: 'DELETE',
+      });
+      const deletingCurrent = target.session_id === sessionIdRef.current;
+      setSessions((items) => items.filter((item) => item.session_id !== target.session_id));
+      if (deletingCurrent) {
+        setSearch('');
+        if (result.next_session) applySession(result.next_session);
+        else clearSession();
+      }
+      refreshSessions(deletingCurrent ? '' : searchRef.current).catch((err) => showError(err.message));
+      setDeleteTarget(null);
+      showNotice('Konuşma yerel geçmişten kalıcı olarak silindi.');
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      setDeletingSessionId(null);
     }
   };
 
@@ -570,6 +628,16 @@ export default function App() {
     socketRef.current?.reconnect();
   };
 
+  const openSidebar = () => {
+    setSidebarCollapsed(false);
+    setSidebarOpen(true);
+  };
+
+  const closeSidebar = () => {
+    setSidebarOpen(false);
+    setSidebarCollapsed(true);
+  };
+
   const openFile = async (path) => {
     const requestId = ++fileRequestRef.current;
     setInspectorTab('files');
@@ -607,7 +675,7 @@ export default function App() {
   const suggestionDisabled = busy || !connected || !workspaceRoot;
 
   return (
-    <div className={`app-shell ${inspectorOpen ? 'with-inspector' : ''} ${sidebarOpen ? 'sidebar-open' : ''}`}>
+    <div className={`app-shell ${inspectorOpen ? 'with-inspector' : ''} ${sidebarOpen ? 'sidebar-open' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       <a className="skip-link" href="#composer">Mesaj alanına geç</a>
       <Sidebar
         workspace={workspace}
@@ -619,17 +687,19 @@ export default function App() {
         sessionsLoading={sessionsLoading}
         sessionTransition={sessionTransition}
         workspaceSelecting={workspaceSelecting}
+        deletingSessionId={deletingSessionId}
         settingsDisabled={approvals.length > 0}
         onSearch={setSearch}
         onNewSession={newSession}
         onOpenSession={openSession}
+        onDeleteSession={requestDeleteSession}
         onPickWorkspace={pickWorkspace}
         onOpenSettings={() => {
           if (approvals.length > 0) return;
           setSettingsOpen(true);
           setSidebarOpen(false);
         }}
-        onClose={() => setSidebarOpen(false)}
+        onClose={closeSidebar}
       />
 
       {sidebarOpen && <button type="button" className="panel-scrim sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="Sol paneli kapat" />}
@@ -637,7 +707,14 @@ export default function App() {
       <main className="chat-column" aria-busy={busy}>
         <header className="chat-topbar">
           <div className="chat-title">
-            <button type="button" className="icon-button mobile-only" onClick={() => setSidebarOpen(true)} aria-label="Sol paneli aç">
+            <button
+              type="button"
+              className={`icon-button sidebar-toggle ${sidebarCollapsed ? '' : 'mobile-only'}`}
+              onClick={openSidebar}
+              aria-controls="conversation-sidebar"
+              title="Sol paneli aç"
+              aria-label="Sol paneli aç"
+            >
               <PanelLeftOpen size={18} />
             </button>
             <div className="gemini-icon"><Sparkles size={17} /></div>
@@ -781,6 +858,14 @@ export default function App() {
 
       {inspectorOpen && <button type="button" className="panel-scrim inspector-scrim" onClick={() => setInspectorOpen(false)} aria-label="Inspector panelini kapat" />}
 
+      <DeleteSessionModal
+        session={deleteTarget}
+        deleting={Boolean(deleteTarget && deletingSessionId === deleteTarget.session_id)}
+        onCancel={() => {
+          if (!deletingSessionId) setDeleteTarget(null);
+        }}
+        onConfirm={deleteSession}
+      />
       <ApprovalModal
         approval={approvals[0]}
         pendingCount={approvals.length}

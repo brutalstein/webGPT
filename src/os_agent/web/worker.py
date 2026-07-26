@@ -111,6 +111,41 @@ class AgentWorker:
     async def resume_session(self, session_id: str) -> dict[str, Any]:
         return await self._run(self._resume_session_sync, session_id)
 
+    def _delete_session_sync(self, session_id: str) -> dict[str, Any]:
+        session_id = session_id.strip()
+        if not session_id:
+            raise ProviderError("Silinecek oturum kimliği gerekli.")
+        with self._state_lock:
+            if self._busy:
+                raise ProviderError("Gemini çalışırken konuşma silinemez.")
+            was_current = self._session_id == session_id
+        record = self.sessions.get(session_id)
+        if record is None or str(record.get("provider", "")).casefold() != "gemini":
+            raise ProviderError("Gemini oturumu bulunamadı.")
+        if was_current:
+            if self._orchestrator is not None:
+                self._orchestrator.detach_session(session_id)
+            with self._state_lock:
+                self._session_id = None
+        if not self.sessions.delete(session_id):
+            raise ProviderError("Konuşma silinemedi; oturum artık mevcut değil.")
+
+        next_session = None
+        if was_current:
+            candidate = self.sessions.latest_for_provider("gemini")
+            if candidate is not None:
+                next_session = self._resume_session_sync(str(candidate["session_id"]))
+        payload = {
+            "session_id": session_id,
+            "was_current": was_current,
+            "next_session": next_session,
+        }
+        self._publish("session.deleted", payload)
+        return payload
+
+    async def delete_session(self, session_id: str) -> dict[str, Any]:
+        return await self._run(self._delete_session_sync, session_id)
+
     def _send_sync(self, prompt: str) -> dict[str, Any]:
         prompt = prompt.strip()
         if not prompt:

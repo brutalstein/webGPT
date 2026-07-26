@@ -6,6 +6,7 @@ import {
   Search,
   Settings2,
   Sparkles,
+  Trash2,
   X,
 } from 'lucide-react';
 
@@ -31,25 +32,33 @@ export default function Sidebar({
   sessionsLoading,
   sessionTransition,
   workspaceSelecting,
+  deletingSessionId,
   settingsDisabled,
   onSearch,
   onNewSession,
   onOpenSession,
+  onDeleteSession,
   onPickWorkspace,
   onOpenSettings,
   onClose,
 }) {
   const root = workspace?.workspace?.root || workspace?.root || 'Çalışma alanı seçilmedi';
-  const sessionActionsBlocked = busy || sessionTransition || !connected;
+  const sessionActionsBlocked = busy || sessionTransition || Boolean(deletingSessionId) || !connected;
   return (
-    <aside className="sidebar" aria-label="Konuşma ve çalışma alanı menüsü">
+    <aside id="conversation-sidebar" className="sidebar" aria-label="Konuşma ve çalışma alanı menüsü">
       <div className="brand-row">
         <div className="brand-mark"><Sparkles size={18} /></div>
         <div>
           <div className="brand-name">OS</div>
           <div className="brand-subtitle">Local Agent</div>
         </div>
-        <button type="button" className="icon-button sidebar-close mobile-only" onClick={onClose} aria-label="Sol paneli kapat">
+        <button
+          type="button"
+          className="icon-button sidebar-close"
+          onClick={onClose}
+          title="Sol paneli geçici olarak kapat"
+          aria-label="Sol paneli geçici olarak kapat"
+        >
           <X size={17} />
         </button>
       </div>
@@ -93,20 +102,35 @@ export default function Sidebar({
 
       <div className="session-list" role="list" aria-busy={sessionsLoading || undefined}>
         {sessions.length === 0 && <div className="empty-note">Henüz Gemini konuşması yok.</div>}
-        {sessions.map((item) => (
-          <button
-            type="button"
-            key={item.session_id}
-            className={`session-item ${item.session_id === currentSessionId ? 'active' : ''}`}
-            onClick={() => onOpenSession(item.session_id)}
-            disabled={sessionActionsBlocked || item.session_id === currentSessionId}
-            aria-current={item.session_id === currentSessionId ? 'page' : undefined}
-            title={item.title || 'Yeni oturum'}
-          >
-            <span className="session-title">{item.title || 'Yeni oturum'}</span>
-            <span className="session-meta">{item.message_count || 0} mesaj · {formatDate(item.updated_at)}</span>
-          </button>
-        ))}
+        {sessions.map((item) => {
+          const deleting = deletingSessionId === item.session_id;
+          return (
+            <div className="session-row" role="listitem" key={item.session_id}>
+              <button
+                type="button"
+                className={`session-item ${item.session_id === currentSessionId ? 'active' : ''}`}
+                onClick={() => onOpenSession(item.session_id)}
+                disabled={sessionActionsBlocked || item.session_id === currentSessionId}
+                aria-current={item.session_id === currentSessionId ? 'page' : undefined}
+                title={item.title || 'Yeni oturum'}
+              >
+                <span className="session-title">{item.title || 'Yeni oturum'}</span>
+                <span className="session-meta">{item.message_count || 0} mesaj · {formatDate(item.updated_at)}</span>
+              </button>
+              <button
+                type="button"
+                className="session-delete"
+                onClick={() => onDeleteSession(item)}
+                disabled={sessionActionsBlocked}
+                aria-busy={deleting || undefined}
+                title={deleting ? 'Konuşma siliniyor' : 'Konuşmayı sil'}
+                aria-label={`${item.title || 'Yeni oturum'} konuşmasını sil`}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       <button type="button" className="sidebar-settings" onClick={onOpenSettings} disabled={settingsDisabled} title={settingsDisabled ? 'Önce açık araç onayını tamamla' : undefined}>

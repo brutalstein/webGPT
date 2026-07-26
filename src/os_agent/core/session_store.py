@@ -252,6 +252,12 @@ class SessionStore:
             if cursor.rowcount == 0:
                 raise KeyError(f"Oturum bulunamadı: {session_id}")
 
+    def delete(self, session_id: str) -> bool:
+        """Konuşmayı ve ON DELETE CASCADE bağlı mesajlarını kalıcı olarak siler."""
+        with self.database.transaction() as connection:
+            cursor = connection.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+        return cursor.rowcount > 0
+
     def recent_turns(self, session_id: str, limit: int = 6) -> list[dict[str, Any]]:
         with self.database.read() as connection:
             rows = connection.execute(

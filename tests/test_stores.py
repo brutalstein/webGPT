@@ -36,6 +36,22 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(recent[0]["turns"][0]["metadata"]["source"], "terminal")
             self.assertEqual(database.quick_check(), "ok")
 
+    def test_session_delete_cascades_messages(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database = StateDatabase(Path(tmp) / "os-state.db")
+            store = SessionStore(database)
+            session_id = store.create("gemini")
+            store.add_turn(session_id, "user", "silinecek")
+            self.assertTrue(store.delete(session_id))
+            self.assertFalse(store.delete(session_id))
+            self.assertIsNone(store.get(session_id))
+            with database.read() as connection:
+                count = connection.execute(
+                    "SELECT COUNT(*) FROM messages WHERE session_id = ?", (session_id,)
+                ).fetchone()[0]
+            self.assertEqual(count, 0)
+            self.assertEqual(database.quick_check(), "ok")
+
 
 if __name__ == "__main__":
     unittest.main()

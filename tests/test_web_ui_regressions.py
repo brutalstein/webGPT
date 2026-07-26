@@ -115,6 +115,22 @@ class WebUiRegressionTests(unittest.TestCase):
         self.assertIn("modalStack", dialog)
         self.assertIn("bodyLockCount", dialog)
 
+    def test_sidebar_can_collapse_and_sessions_can_be_deleted(self) -> None:
+        app = self.read("web/src/App.jsx")
+        sidebar = self.read("web/src/components/Sidebar.jsx")
+        modal = self.read("web/src/components/DeleteSessionModal.jsx")
+        css = self.read("web/src/styles.css")
+        backend = self.read("src/os_agent/web/app.py")
+        worker = self.read("src/os_agent/web/worker.py")
+        self.assertIn("sidebarCollapsed", app)
+        self.assertIn("sidebar-collapsed", css)
+        self.assertNotIn("sidebar-close mobile-only", sidebar)
+        self.assertIn("onDeleteSession", sidebar)
+        self.assertIn("role="alertdialog"", modal)
+        self.assertIn("method: 'DELETE'", app)
+        self.assertIn('@app.delete("/api/sessions/{session_id}")', backend)
+        self.assertIn("def _delete_session_sync", worker)
+
     def test_project_brain_exposes_continuous_structural_health(self) -> None:
         runtime = self.read("src/os_agent/tools/runtime.py")
         engine = self.read("src/os_agent/context/engine.py")

@@ -1,5 +1,12 @@
 # Değişiklik Günlüğü
 
+## 0.10.2
+
+- Sol konuşma sidebar'ı masaüstü ve mobilde gerçekten kapatılıp yeniden açılabilir hâle getirildi.
+- Konuşma listesine kalıcı silme düğmesi, erişilebilir doğrulama modalı ve eşzamanlı işlem koruması eklendi.
+- Aktif konuşma silindiğinde worker/provider yaşam döngüsü güvenle ayrılıyor ve sıradaki konuşma otomatik açılıyor.
+- SQLite session silme işlemi mesajlarda cascade temizliği, 404/409 API durumları ve regresyon testleriyle tamamlandı.
+
 ## 0.10.1
 
 - Web arayüzündeki bütün etkileşimler bağlantı, yükleme ve eşzamanlı işlem durumlarına göre açıkça kilitlendi.

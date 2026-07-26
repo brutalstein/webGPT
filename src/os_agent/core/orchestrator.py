@@ -160,6 +160,17 @@ class Orchestrator:
             self._started.remove(self.provider_name)
             self._bound_sessions.pop(self.provider_name, None)
 
+    def detach_session(self, session_id: str) -> bool:
+        """Silinecek aktif oturumu provider durumunu tekrar yazmadan güvenle ayırır."""
+        if self.session_id != session_id:
+            return False
+        if self.provider_name in self._started:
+            self.provider.close()
+            self._started.remove(self.provider_name)
+        self._bound_sessions.pop(self.provider_name, None)
+        self.session_id = None
+        return True
+
     def send(self, user_prompt: str) -> ProviderResponse:
         if not self.session_id:
             self.new_session()
