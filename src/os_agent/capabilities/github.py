@@ -118,8 +118,6 @@ class GitHubCapabilityInspector:
             "GIT_ALTERNATE_OBJECT_DIRECTORIES": "",
             "GIT_OBJECT_DIRECTORY": "",
             "GIT_COMMON_DIR": "",
-            "GIT_DIR": "",
-            "GIT_WORK_TREE": "",
         }
         if env_overrides:
             clean_env.update(env_overrides)
